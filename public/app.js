@@ -51,6 +51,15 @@ function downloadBlob(content, type, filename){
 async function readJsonSafe(res){
   try{ return await res.json(); }catch(e){ return {}; }
 }
+/** Torna uma div clicável também operável por teclado (tab + Enter/Espaço), com foco visível via CSS. */
+function makeClickable(el, handler){
+  el.setAttribute('tabindex', '0');
+  el.setAttribute('role', 'button');
+  el.addEventListener('click', handler);
+  el.addEventListener('keydown', e=>{
+    if(e.key==='Enter' || e.key===' '){ e.preventDefault(); handler(e); }
+  });
+}
 
 /* ============================================================
    TOASTS & CONFIRM MODAL — elegant feedback, no native dialogs
@@ -176,19 +185,113 @@ function aggregateExec(){
   const chron = meetings.slice().sort((a,b)=>a.criadoEm-b.criadoEm);
   const scores = chron.map(m=>overallScore(m.analise)).filter(v=>v!=null);
   const sentiments = chron.map(m=>sentToNum(m.analise?.sentimento?.geral));
+  const criticasPorReuniao = chron.map(m=>taskCounts(m.analise).criticas);
   const scoreTrend = computeTrendSplit(scores);
   const sentTrend = computeTrendSplit(sentiments);
+  const criticasTrend = computeTrendSplit(criticasPorReuniao);
   const ranked = meetings.filter(m=>overallScore(m.analise)!=null).sort((a,b)=>overallScore(b.analise)-overallScore(a.analise));
   return {
     total, decisoes, tarefas, pendentes, concluidas, semResp, criticas,
     produtividadeMedia: scores.length ? Math.round(scores.reduce((s,v)=>s+v,0)/scores.length) : null,
     sentimentoMedio: sentiments.length ? sentiments.reduce((s,v)=>s+v,0)/sentiments.length : null,
+    decisoesPorReuniao: total ? Math.round(decisoes/total*10)/10 : null,
     horasProdutivas: Math.round(minProd/60*10)/10,
     horasDesperdicadas: Math.round(minPerd/60*10)/10,
-    porMes, scoreTrend, sentTrend,
+    porMes, scoreTrend, sentTrend, criticasTrend,
     maisProdutiva: ranked[0]||null,
     menosProdutiva: ranked.length>1 ? ranked[ranked.length-1] : null
   };
+}
+/** Em quantas reuniões (das já analisadas) um score específico ficou igual ou abaixo do valor informado. */
+function percentileRank(value, allValues){
+  const clean = allValues.filter(v=>v!=null);
+  if(!clean.length || value==null) return null;
+  const belowOrEqual = clean.filter(v=>v<=value).length;
+  return Math.round(belowOrEqual/clean.length*100);
+}
+/**
+ * Compara uma reunião com a média histórica das outras já analisadas: percentil geral,
+ * pontos fortes/fracos por dimensão de score e uma frase de conclusão automática.
+ * Tudo calculado a partir de dados já salvos, sem chamada nova de IA.
+ */
+function buildComparison(m, scoreLabels){
+  const a = m.analise || {};
+  if(!a.score) return null;
+  const others = meetings.filter(x=>x.id!==m.id && x.analise?.score);
+  if(others.length < 2) return null;
+
+  const diffs = Object.entries(scoreLabels).map(([k,label])=>{
+    const vals = others.map(x=>x.analise.score[k]).filter(v=>typeof v==='number');
+    if(!vals.length || typeof a.score[k]!=='number') return null;
+    const avg = vals.reduce((s,v)=>s+v,0)/vals.length;
+    return {k, label, value:a.score[k], avg, diff:a.score[k]-avg};
+  }).filter(Boolean);
+
+  const os = overallScore(a);
+  const othersOverall = others.map(x=>overallScore(x.analise)).filter(v=>v!=null);
+  const pct = (os!=null && othersOverall.length) ? percentileRank(os, [...othersOverall, os]) : null;
+
+  const strengths = diffs.filter(d=>d.diff>=5).sort((x,y)=>y.diff-x.diff).slice(0,2);
+  const weaknesses = diffs.filter(d=>d.diff<=-5).sort((x,y)=>x.diff-y.diff).slice(0,2);
+
+  let conclusion;
+  if(strengths.length && weaknesses.length){
+    conclusion = `Esta reunião apresentou ${strengths[0].label.toLowerCase()} acima da média (${strengths[0].value} vs. ${Math.round(strengths[0].avg)}), mas ficou abaixo em ${weaknesses[0].label.toLowerCase()} (${weaknesses[0].value} vs. ${Math.round(weaknesses[0].avg)}) — vale atenção nesse ponto na próxima reunião.`;
+  } else if(strengths.length){
+    conclusion = `Esta reunião se destacou em ${strengths.map(s=>s.label.toLowerCase()).join(' e ')}, acima da média histórica da empresa.`;
+  } else if(weaknesses.length){
+    conclusion = `Esta reunião ficou abaixo da média histórica em ${weaknesses.map(s=>s.label.toLowerCase()).join(' e ')} — vale investigar o motivo.`;
+  } else {
+    conclusion = 'Esta reunião ficou em linha com a média histórica da empresa, sem pontos fortes ou fracos que se destaquem.';
+  }
+
+  return { pct, strengths, weaknesses, conclusion, totalComparadas: others.length };
+}
+/** Críticas e pendentes primeiro, pra quem gerencia identificar rápido o que resolver antes. */
+function sortTasksForDisplay(tarefas){
+  return tarefas.map((t,i)=>({t, i})).sort((x,y)=>{
+    if(!!x.t.concluida !== !!y.t.concluida) return x.t.concluida ? 1 : -1;
+    if(!!x.t.critica !== !!y.t.critica) return x.t.critica ? -1 : 1;
+    return 0;
+  });
+}
+function taskRowHtml({t,i}){
+  return `<tr id="taskrow-${i}" class="${t.critica && !t.concluida ? 'task-critical-row' : ''}">
+    <td><input type="checkbox" class="task-check" data-idx="${i}" ${t.concluida?'checked':''}></td>
+    <td class="task-desc ${t.concluida?'done':''}">${escapeHtml(t.tarefa)}</td>
+    <td>${t.responsavel && t.responsavel!=='não definido' ? escapeHtml(t.responsavel) : badge('sem responsável','orange')}</td>
+    <td><span class="prazo-chip">${escapeHtml(t.prazo||'não definido')}</span></td>
+    <td>${t.critica ? badge('crítica','red') : ''}</td>
+  </tr>`;
+}
+function taskBadgesHtml(tc){
+  const concluidasCriticas = tc.criticasTotal - tc.criticas;
+  return `${badge(tc.pendentes+' pendentes', tc.pendentes?'orange':'mute')}${badge(tc.concluidas+' concluídas', 'green')}${tc.semResp?badge(tc.semResp+' sem responsável','orange'):''}${tc.criticas?badge(tc.criticas+' crítica'+(tc.criticas===1?'':'s')+' em aberto','red'):''}${concluidasCriticas>0?badge(concluidasCriticas+' crítica'+(concluidasCriticas===1?'':'s')+' já concluída'+(concluidasCriticas===1?'':'s'),'mute'):''}`;
+}
+function comparisonCardHtml(m, scoreLabels){
+  const cmp = buildComparison(m, scoreLabels);
+  if(!cmp) return '';
+  const sideHtml = (items, tone, emptyText) => items.length
+    ? items.map(s=>`<div class="compare-item"><span>${escapeHtml(s.label)}</span><span class="compare-diff ${tone}">${s.diff>0?'+':''}${Math.round(s.diff)} vs. média</span></div>`).join('')
+    : `<p class="hint">${emptyText}</p>`;
+  return `<div class="card">
+    ${cardTitle('Como esta reunião se compara', 'compass')}
+    ${cmp.pct!=null ? `<div class="percentile-banner">
+      <span class="percentile-num">${cmp.pct}º</span>
+      <span class="percentile-text">percentil — nota geral melhor que ${cmp.pct}% das outras ${cmp.totalComparadas} reuniões já analisadas.</span>
+    </div>` : ''}
+    <p class="compare-conclusion">${escapeHtml(cmp.conclusion)}</p>
+    ${(cmp.strengths.length || cmp.weaknesses.length) ? `<div class="compare-grid">
+      <div>
+        <div class="compare-col-title green">${icon('trendUp',12)} Pontos fortes</div>
+        ${sideHtml(cmp.strengths, 'green', 'Nenhum ponto se destacou acima da média.')}
+      </div>
+      <div>
+        <div class="compare-col-title orange">${icon('alert',12)} Pontos de atenção</div>
+        ${sideHtml(cmp.weaknesses, 'orange', 'Nenhum ponto ficou abaixo da média.')}
+      </div>
+    </div>` : ''}
+  </div>`;
 }
 function computeNarrative(){
   if(meetings.length<2){
@@ -340,7 +443,7 @@ function deltaBadge(delta, invert=false, digits=0){
   const ic = up ? 'trendUp' : 'trendDown';
   return `<span class="kpi-delta ${cls}">${icon(ic,10)} ${up?'+':''}${delta.toFixed(digits)}</span>`;
 }
-function kpiCard(numHtml, numClass, label, iconName, deltaHtml=''){
+function kpiCard(numHtml, numClass, label, iconName, deltaHtml='', contextText=''){
   return `<div class="kpi-card">
     <div class="kpi-top">
       <div>
@@ -350,6 +453,7 @@ function kpiCard(numHtml, numClass, label, iconName, deltaHtml=''){
       <span class="kpi-icon">${icon(iconName,14)}</span>
     </div>
     <div class="kpi-label">${label}</div>
+    ${contextText ? `<div class="kpi-context">${contextText}</div>` : ''}
   </div>`;
 }
 function emptyStateHtml(iconName, title, text, actionHtml=''){
@@ -459,7 +563,7 @@ function renderSidebar(){
       <span class="mc-score" style="background:${scoreColor(os)};" title="${os!=null? 'Score '+os : 'Sem score'}"></span>
     </div>`;
   }).join('');
-  list.querySelectorAll('.meeting-card').forEach(el=>el.addEventListener('click', ()=>setView('detail', el.dataset.id)));
+  list.querySelectorAll('.meeting-card').forEach(el=>makeClickable(el, ()=>setView('detail', el.dataset.id)));
 }
 
 /* ============================================================
@@ -524,14 +628,14 @@ function dashboardTemplate(){
   <div class="kpi-grid">
     ${kpiCard(s.total, '', 'Reuniões analisadas', 'doc')}
     ${kpiCard(s.produtividadeMedia ?? '—', scoreBadgeClass(s.produtividadeMedia), 'Score médio de produtividade', 'target', s.scoreTrend?deltaBadge(s.scoreTrend.delta):'')}
-    ${kpiCard(s.decisoes, 'blue', 'Decisões registradas', 'check')}
-    ${kpiCard(s.pendentes, s.pendentes>0?'orange':'green', `Tarefas pendentes de ${s.tarefas}`, 'checkTasks')}
+    ${kpiCard(s.decisoes, 'blue', 'Decisões registradas', 'check', '', s.decisoesPorReuniao!=null ? `~${s.decisoesPorReuniao} por reunião` : '')}
+    ${kpiCard(s.pendentes, s.pendentes>0?'orange':'green', `Tarefas pendentes de ${s.tarefas}`, 'checkTasks', '', s.tarefas ? `${Math.round(s.pendentes/s.tarefas*100)}% do total ainda em aberto` : '')}
   </div>
   <div class="kpi-grid">
-    ${kpiCard(s.criticas, 'red', 'Tarefas críticas em aberto', 'flag')}
-    ${kpiCard(s.semResp, 'orange', 'Tarefas sem responsável', 'users')}
-    ${kpiCard(s.horasProdutivas||'—', 'green', `Horas produtivas estimadas${s.horasProdutivas?'':' (informe a duração)'}`, 'clock')}
-    ${kpiCard(`<span style="font-size:19px; text-transform:uppercase;">${sentLabel}</span>`, '', 'Sentimento médio das reuniões', 'sentiment')}
+    ${kpiCard(s.criticas, 'red', 'Tarefas críticas em aberto', 'flag', s.criticasTrend?deltaBadge(s.criticasTrend.delta, true):'')}
+    ${kpiCard(s.semResp, 'orange', 'Tarefas sem responsável', 'users', '', s.tarefas ? `${Math.round(s.semResp/s.tarefas*100)}% do total de tarefas` : '')}
+    ${kpiCard(s.horasProdutivas||'—', 'green', `Horas produtivas estimadas${s.horasProdutivas?'':' (informe a duração)'}`, 'clock', '', (s.horasProdutivas || s.horasDesperdicadas) ? `${Math.round(s.horasProdutivas/(s.horasProdutivas+s.horasDesperdicadas)*100)}% do tempo total em reunião` : '')}
+    ${kpiCard(`<span style="font-size:19px; text-transform:uppercase;">${sentLabel}</span>`, '', 'Sentimento médio das reuniões', 'sentiment', s.sentTrend?deltaBadge(s.sentTrend.delta, false, 1):'')}
   </div>
 
   <div class="grid-2">
@@ -566,7 +670,7 @@ function recentRowHtml(m){
 }
 function bindDashboard(){
   const b = document.getElementById('emptyNewBtn'); if(b) b.addEventListener('click', ()=>setView('new'));
-  document.querySelectorAll('.list-row').forEach(el=>el.addEventListener('click', ()=>setView('detail', el.dataset.id)));
+  document.querySelectorAll('.list-row').forEach(el=>makeClickable(el, ()=>setView('detail', el.dataset.id)));
 }
 
 /* ============================================================
@@ -654,7 +758,7 @@ function bindNewMeetingForm(){
 
   const fileDrop = document.getElementById('fileDrop');
   const fileInput = document.getElementById('fAudio');
-  fileDrop.addEventListener('click', ()=>fileInput.click());
+  makeClickable(fileDrop, ()=>fileInput.click());
   fileInput.addEventListener('change', updateFileDropLabel);
   ['dragover','dragleave','drop'].forEach(evt=>{
     fileDrop.addEventListener(evt, e=>{
@@ -843,6 +947,8 @@ function detailTemplate(m){
         </div>`).join('')}</div>` : '<p class="hint">Sem score disponível — reanalise a reunião.</p>'}
     </div>
 
+    ${comparisonCardHtml(m, scoreLabels)}
+
     <div class="card">
       ${cardTitle(`Decisões tomadas (${(a.decisoes||[]).length})`, 'check')}
       ${(a.decisoes?.length) ? `<ul class="plain">${a.decisoes.map(d=>`<li>${escapeHtml(d)}</li>`).join('')}</ul>` : '<p class="hint">Nenhuma decisão explícita identificada.</p>'}
@@ -852,23 +958,14 @@ function detailTemplate(m){
       <div class="card-title-row">
         ${cardTitle('Tarefas', 'checkTasks')}
         <div id="taskBadges" style="display:flex; gap:6px; flex-wrap:wrap;">
-          ${badge(tc.pendentes+' pendentes', tc.pendentes?'orange':'mute')}
-          ${badge(tc.concluidas+' concluídas', 'green')}
-          ${tc.semResp?badge(tc.semResp+' sem responsável','orange'):''}
-          ${tc.criticas?badge(tc.criticas+' críticas','red'):''}
+          ${taskBadgesHtml(tc)}
         </div>
       </div>
       ${(a.tarefas?.length) ? `
       <table class="tasks">
         <thead><tr><th></th><th>Tarefa</th><th>Responsável</th><th>Prazo</th><th></th></tr></thead>
         <tbody>
-          ${a.tarefas.map((t,i)=>`<tr id="taskrow-${i}">
-            <td><input type="checkbox" class="task-check" data-idx="${i}" ${t.concluida?'checked':''}></td>
-            <td class="task-desc ${t.concluida?'done':''}">${escapeHtml(t.tarefa)}</td>
-            <td>${t.responsavel && t.responsavel!=='não definido' ? escapeHtml(t.responsavel) : badge('sem responsável','orange')}</td>
-            <td><span class="prazo-chip">${escapeHtml(t.prazo||'não definido')}</span></td>
-            <td>${t.critica ? badge('crítica','red') : ''}</td>
-          </tr>`).join('')}
+          ${sortTasksForDisplay(a.tarefas).map(taskRowHtml).join('')}
         </tbody>
       </table>` : '<p class="hint">Nenhuma tarefa identificada.</p>'}
     </div>
@@ -936,10 +1033,11 @@ function bindDetailActions(m){
         void row.offsetWidth;
         row.classList.add('task-row-flash');
       }
+      if(row) row.classList.toggle('task-critical-row', !!m.analise.tarefas[idx].critica && !done);
       const tc = taskCounts(m.analise);
       const badgesWrap = document.getElementById('taskBadges');
       if(badgesWrap){
-        badgesWrap.innerHTML = `${badge(tc.pendentes+' pendentes', tc.pendentes?'orange':'mute')}${badge(tc.concluidas+' concluídas', 'green')}${tc.semResp?badge(tc.semResp+' sem responsável','orange'):''}${tc.criticas?badge(tc.criticas+' críticas','red'):''}`;
+        badgesWrap.innerHTML = taskBadgesHtml(tc);
       }
       try{
         const res = await fetch(`/api/meetings/${m.id}/tasks/${idx}`, {
@@ -1078,7 +1176,7 @@ function timelineTemplate(){
   `;
 }
 function bindTimeline(){
-  document.querySelectorAll('.tl-vcard').forEach(el=>el.addEventListener('click', ()=>setView('detail', el.dataset.id)));
+  document.querySelectorAll('.tl-vcard').forEach(el=>makeClickable(el, ()=>setView('detail', el.dataset.id)));
 }
 
 /* ============================================================
@@ -1192,7 +1290,7 @@ function bindAlerts(){
   });
   const toggle = document.getElementById('dismissedToggle');
   if(toggle){
-    toggle.addEventListener('click', ()=>{
+    makeClickable(toggle, ()=>{
       const list = document.getElementById('dismissedList');
       if(list) list.style.display = list.style.display==='none' ? 'flex' : 'none';
     });
@@ -1212,11 +1310,11 @@ function bindAlerts(){
    NAV BINDINGS
 ============================================================ */
 document.getElementById('btnNew').addEventListener('click', ()=>setView('new'));
-document.getElementById('navDashboard').addEventListener('click', ()=>setView('dashboard'));
-document.getElementById('navInsights').addEventListener('click', ()=>setView('insights'));
-document.getElementById('navTimeline').addEventListener('click', ()=>setView('timeline'));
-document.getElementById('navSearch').addEventListener('click', ()=>setView('search'));
-document.getElementById('navAlerts').addEventListener('click', ()=>setView('alerts'));
+makeClickable(document.getElementById('navDashboard'), ()=>setView('dashboard'));
+makeClickable(document.getElementById('navInsights'), ()=>setView('insights'));
+makeClickable(document.getElementById('navTimeline'), ()=>setView('timeline'));
+makeClickable(document.getElementById('navSearch'), ()=>setView('search'));
+makeClickable(document.getElementById('navAlerts'), ()=>setView('alerts'));
 document.getElementById('searchInput').addEventListener('input', renderSidebar);
 
 renderMain();

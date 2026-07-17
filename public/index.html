@@ -98,6 +98,7 @@ body{
 .nav-item svg{flex-shrink:0; opacity:.75; transition:opacity .15s;}
 .nav-item:hover{background:var(--card); color:var(--text);}
 .nav-item:hover svg{opacity:1;}
+.nav-item:focus-visible{outline:2px solid var(--blue); outline-offset:2px;}
 .nav-item.active{background:var(--card-2); color:var(--text); border-color:var(--border);}
 .nav-item.active svg{opacity:1; color:var(--blue);}
 .nav-badge{margin-left:auto; font-size:10.5px; font-family:'JetBrains Mono',monospace; background:var(--red-soft); color:var(--red); border-radius:8px; padding:1.5px 6px; font-weight:600;}
@@ -116,6 +117,7 @@ input:focus, textarea:focus{outline:none; border-color:var(--blue); box-shadow:0
 .meeting-list{display:flex; flex-direction:column; gap:2px; flex:1; overflow-y:auto; min-height:40px;}
 .meeting-card{display:flex; align-items:center; gap:9px; padding:8px 8px; border-radius:var(--radius-sm); cursor:pointer; border:1px solid transparent; transition:background .15s var(--ease), border-color .15s var(--ease);}
 .meeting-card:hover{background:var(--card);}
+.meeting-card:focus-visible{outline:2px solid var(--blue); outline-offset:-2px;}
 .meeting-card.active{background:var(--card-2); border-color:var(--border);}
 .mc-num{font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-mute); width:22px; flex-shrink:0;}
 .mc-meta{overflow:hidden; flex:1;}
@@ -141,16 +143,21 @@ h1,h2,h3{font-weight:600; margin:0;}
 .card-title-row{display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;}
 .card-title-row .card-title{margin-bottom:0;}
 
-/* Narrative summary */
-.narrative-card{background:linear-gradient(155deg, var(--card) 0%, var(--card-2) 130%); border:1px solid var(--border); border-radius:var(--radius); padding:22px 26px; margin-bottom:22px; box-shadow:var(--shadow-sm);}
-.narrative-list{display:flex; flex-direction:column; gap:13px;}
-.narrative-item{display:flex; align-items:flex-start; gap:11px; font-size:13.5px; line-height:1.55;}
-.narrative-icon{flex-shrink:0; width:26px; height:26px; border-radius:7px; display:flex; align-items:center; justify-content:center; margin-top:1px;}
+/* Narrative summary — hero element of the dashboard: the manager should be able
+   to read this and understand the state of the business before anything else. */
+.narrative-card{position:relative; background:linear-gradient(155deg, var(--card-2) 0%, var(--card) 130%); border:1px solid var(--border); border-radius:calc(var(--radius) + 2px); padding:28px 32px 30px; margin-bottom:26px; box-shadow:var(--shadow-md); overflow:hidden;}
+.narrative-card::before{content:''; position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg, var(--blue), #8b5cf6, var(--blue)); background-size:200% 100%; animation:heroSheen 6s linear infinite;}
+@keyframes heroSheen{0%{background-position:0% 0;}100%{background-position:200% 0;}}
+.narrative-card .card-title{font-size:12.5px; letter-spacing:.8px; margin-bottom:20px;}
+.narrative-list{display:flex; flex-direction:column; gap:16px;}
+.narrative-item{display:flex; align-items:flex-start; gap:13px; font-size:15px; line-height:1.6;}
+.narrative-icon{flex-shrink:0; width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center; margin-top:1px;}
 .narrative-icon.green{background:var(--green-soft); color:var(--green);}
 .narrative-icon.red{background:var(--red-soft); color:var(--red);}
 .narrative-icon.orange{background:var(--orange-soft); color:var(--orange);}
 .narrative-icon.blue{background:var(--blue-soft); color:var(--blue);}
-.narrative-text{color:var(--text-dim); padding-top:3px;}
+.narrative-text{color:var(--text); padding-top:4px; font-weight:450;}
+.narrative-text b, .narrative-text strong{color:var(--text); font-weight:700;}
 
 /* KPI grid */
 .kpi-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:16px;}
@@ -162,6 +169,7 @@ h1,h2,h3{font-weight:600; margin:0;}
 .kpi-num{font-family:'JetBrains Mono',monospace; font-size:27px; font-weight:700; line-height:1; color:var(--text);}
 .kpi-num.blue{color:var(--blue);} .kpi-num.green{color:var(--green);} .kpi-num.orange{color:var(--orange);} .kpi-num.red{color:var(--red);}
 .kpi-label{font-size:11.5px; color:var(--text-mute); margin-top:9px;}
+.kpi-context{font-size:10.5px; color:var(--text-mute); margin-top:4px; opacity:.85;}
 .kpi-delta{display:inline-flex; align-items:center; gap:3px; font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:20px; margin-top:2px;}
 .kpi-delta.green{color:var(--green); background:var(--green-soft);}
 .kpi-delta.red{color:var(--red); background:var(--red-soft);}
@@ -213,6 +221,7 @@ h1,h2,h3{font-weight:600; margin:0;}
 .list-row{display:flex; align-items:center; gap:14px; padding:13px 4px; border-bottom:1px solid var(--border-soft); cursor:pointer; border-radius:8px; transition:background .15s var(--ease), padding-left .15s var(--ease);}
 .list-row:last-child{border-bottom:none;}
 .list-row:hover{background:var(--card-2); padding-left:10px;}
+.list-row:focus-visible{outline:2px solid var(--blue); outline-offset:-2px;}
 .list-row:hover .list-title{color:var(--blue);}
 .list-title{font-size:13.5px; font-weight:500; transition:color .15s var(--ease);}
 .list-sub{font-size:11.5px; color:var(--text-mute); margin-top:3px;}
@@ -248,6 +257,7 @@ h1,h2,h3{font-weight:600; margin:0;}
 /* file drop zone */
 .file-drop{border:1.5px dashed var(--border); border-radius:var(--radius-sm); padding:26px 20px; text-align:center; cursor:pointer; transition:border-color .15s var(--ease), background .15s var(--ease); color:var(--text-dim); font-size:13px; line-height:1.7;}
 .file-drop:hover{border-color:var(--blue); background:var(--card-2);}
+.file-drop:focus-visible{outline:2px solid var(--blue); outline-offset:2px;}
 .file-drop.dragover{border-color:var(--blue); background:var(--blue-soft);}
 .file-drop input[type=file]{display:none;}
 .file-drop svg{color:var(--text-mute);}
@@ -277,6 +287,21 @@ h1,h2,h3{font-weight:600; margin:0;}
 .score-bars-grid{display:grid; grid-template-columns:1fr 1fr; gap:4px 32px;}
 @media (max-width:700px){.score-bars-grid{grid-template-columns:1fr;}}
 .summary-text{font-size:14.5px; line-height:1.8; color:var(--text-dim);}
+
+/* comparison with company average (detail page) */
+.percentile-banner{display:flex; align-items:center; gap:14px; padding:14px 18px; border-radius:var(--radius-sm); background:var(--blue-soft); border:1px solid rgba(59,130,246,.3); margin-bottom:16px;}
+.percentile-num{font-family:'JetBrains Mono',monospace; font-size:22px; font-weight:700; color:var(--blue); flex-shrink:0;}
+.percentile-text{font-size:13px; color:var(--text-dim); line-height:1.5;}
+.compare-conclusion{font-size:13.5px; color:var(--text-dim); line-height:1.7; margin-bottom:16px; padding-bottom:16px; border-bottom:1px solid var(--border-soft);}
+.compare-grid{display:grid; grid-template-columns:1fr 1fr; gap:20px;}
+@media (max-width:600px){.compare-grid{grid-template-columns:1fr;}}
+.compare-col-title{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:11px; display:flex; align-items:center; gap:6px;}
+.compare-col-title.green{color:var(--green);}
+.compare-col-title.orange{color:var(--orange);}
+.compare-item{display:flex; justify-content:space-between; align-items:center; font-size:13px; color:var(--text-dim); padding:7px 0;}
+.compare-item .compare-diff{font-family:'JetBrains Mono',monospace; font-weight:700; font-size:12px;}
+.compare-diff.green{color:var(--green);}
+.compare-diff.orange{color:var(--orange);}
 .tag-grid{display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:18px;}
 @media (max-width:600px){.tag-grid{grid-template-columns:1fr;}}
 .tags{display:flex; flex-wrap:wrap; gap:6px;}
@@ -291,6 +316,9 @@ table.tasks td{padding:11px 6px; border-bottom:1px solid var(--border-soft); ver
 table.tasks tr{transition:background .15s;}
 table.tasks tr:hover{background:var(--card-2);}
 table.tasks tr:last-child td{border-bottom:none;}
+table.tasks tr.task-critical-row td:first-child{box-shadow:inset 3px 0 0 var(--red);}
+table.tasks tr.task-critical-row{background:var(--red-soft);}
+table.tasks tr.task-critical-row:hover{background:rgba(239,68,68,.2);}
 .task-check{width:16px; height:16px; cursor:pointer; accent-color:var(--blue);}
 .task-row-flash{animation:taskFlash .9s var(--ease);}
 @keyframes taskFlash{0%{background:var(--blue-soft);} 100%{background:transparent;}}
@@ -304,7 +332,12 @@ table.tasks tr:last-child td{border-bottom:none;}
 
 .insights-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px;}
 @media (max-width:700px){.insights-grid{grid-template-columns:1fr;}}
-.insight-block{border-radius:var(--radius); padding:18px 20px; border:1px solid var(--border); background:var(--card);}
+.insight-block{border-radius:var(--radius); padding:18px 20px; border:1px solid var(--border); background:var(--card); box-shadow:var(--shadow-sm); transition:border-color .2s var(--ease), transform .2s var(--ease);}
+.insight-block:hover{transform:translateY(-1px);}
+.insight-block.tone-blue:hover{border-color:rgba(59,130,246,.5);}
+.insight-block.tone-red:hover{border-color:rgba(239,68,68,.5);}
+.insight-block.tone-green:hover{border-color:rgba(34,197,94,.5);}
+.insight-block.tone-orange:hover{border-color:rgba(245,158,11,.5);}
 .insight-block-head{display:flex; align-items:center; gap:9px; margin-bottom:13px;}
 .insight-block-icon{width:26px; height:26px; border-radius:7px; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
 .insight-block-title{font-size:12.5px; font-weight:700; text-transform:uppercase; letter-spacing:.4px;}
@@ -346,6 +379,7 @@ table.tasks tr:last-child td{border-bottom:none;}
 .tl-vdot-flag{position:absolute; left:16px; top:-3px; width:16px; height:16px; border-radius:50%; background:var(--red); color:#fff; display:flex; align-items:center; justify-content:center; border:2px solid var(--bg);}
 .tl-vcard{background:var(--card); border:1px solid var(--border); border-radius:var(--radius-sm); padding:15px 18px; cursor:pointer; transition:border-color .15s var(--ease), transform .15s var(--ease), background .15s;}
 .tl-vcard:hover{border-color:var(--blue); transform:translateX(3px); background:var(--card-2);}
+.tl-vcard:focus-visible{outline:2px solid var(--blue); outline-offset:2px;}
 .tl-vdate{font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--text-mute); margin-bottom:5px;}
 .tl-vtitle{font-size:13.5px; font-weight:600; margin-bottom:9px;}
 .tl-vmeta{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
@@ -359,12 +393,16 @@ table.tasks tr:last-child td{border-bottom:none;}
 .alerts-hidden-note{font-size:12px; color:var(--text-mute); margin:6px 2px 18px; line-height:1.6;}
 .alerts-dismissed-toggle{font-size:12px; color:var(--text-mute); cursor:pointer; margin:4px 2px 0; display:inline-block; text-decoration:underline; text-decoration-color:var(--border); text-underline-offset:3px;}
 .alerts-dismissed-toggle:hover{color:var(--text-dim);}
+.alerts-dismissed-toggle:focus-visible{outline:2px solid var(--blue); outline-offset:2px;}
 .dismissed-list{margin-top:12px; display:flex; flex-direction:column; gap:6px;}
 .dismissed-row{display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12.5px; color:var(--text-dim); background:var(--card); border:1px solid var(--border-soft); border-radius:var(--radius-sm); padding:8px 10px;}
 .dismissed-row span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .alert-card.tone-red{border-left-color:var(--red);}
 .alert-card.tone-orange{border-left-color:var(--orange);}
 .alert-card.tone-blue{border-left-color:var(--blue);}
+.alert-card.tone-red:hover{border-color:rgba(239,68,68,.45); border-left-color:var(--red);}
+.alert-card.tone-orange:hover{border-color:rgba(245,158,11,.45); border-left-color:var(--orange);}
+.alert-card.tone-blue:hover{border-color:rgba(59,130,246,.45); border-left-color:var(--blue);}
 .alert-icon{width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
 .alert-card.tone-red .alert-icon{background:var(--red-soft); color:var(--red);}
 .alert-card.tone-orange .alert-icon{background:var(--orange-soft); color:var(--orange);}
@@ -420,23 +458,23 @@ table.tasks tr:last-child td{border-bottom:none;}
     <button class="btn primary" id="btnNew" style="width:100%; justify-content:center;">+ Nova reunião</button>
 
     <div class="nav">
-      <div class="nav-item" data-view="dashboard" id="navDashboard">
+      <div class="nav-item" data-view="dashboard" id="navDashboard" tabindex="0" role="button">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
         Dashboard executivo
       </div>
-      <div class="nav-item" data-view="insights" id="navInsights">
+      <div class="nav-item" data-view="insights" id="navInsights" tabindex="0" role="button">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h6v6"/></svg>
         Inteligência entre reuniões
       </div>
-      <div class="nav-item" data-view="timeline" id="navTimeline">
+      <div class="nav-item" data-view="timeline" id="navTimeline" tabindex="0" role="button">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="19" cy="16" r="2"/><path d="M7 12h3M14 7l3 8"/></svg>
         Timeline
       </div>
-      <div class="nav-item" data-view="search" id="navSearch">
+      <div class="nav-item" data-view="search" id="navSearch" tabindex="0" role="button">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
         Pesquisa inteligente
       </div>
-      <div class="nav-item" data-view="alerts" id="navAlerts">
+      <div class="nav-item" data-view="alerts" id="navAlerts" tabindex="0" role="button">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v6M12 21a2 2 0 002-2H10a2 2 0 002 2zM5 17h14l-1.5-2.5A6 6 0 0116 11V9a4 4 0 00-8 0v2a6 6 0 01-1.5 3.5L5 17z"/></svg>
         Alertas
         <span class="nav-badge" id="alertBadge" style="display:none;">0</span>
