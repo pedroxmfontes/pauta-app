@@ -782,9 +782,21 @@ function bindNewMeetingForm(){
     if(currentMethod==='audio') submitAudioMeeting(); else submitManualMeeting();
   });
 }
+const AUDIO_EXT_RE = /\.(mp3|wav|m4a|ogg|oga|webm|mp4|aac|flac|opus)$/i;
+function isValidAudioFile(file){
+  if(!file) return false;
+  const okMime = /^audio\//.test(file.type) || ['video/mp4','video/webm'].includes(file.type);
+  const okExt = AUDIO_EXT_RE.test(file.name || '');
+  return okMime || okExt;
+}
 function updateFileDropLabel(){
   const f = document.getElementById('fAudio').files[0];
   const box = document.getElementById('fileDropText');
+  if(f && !isValidAudioFile(f)){
+    showFormError(`"${f.name}" não parece ser um arquivo de áudio. Envie um arquivo .mp3, .wav, .m4a, .ogg ou .webm.`);
+  } else {
+    clearFormError();
+  }
   box.innerHTML = f
     ? `${icon('doc',22)}<br><b>${escapeHtml(f.name)}</b><br><span class="hint" style="margin:4px 0 0;">${(f.size/1024/1024).toFixed(1)} MB — clique para trocar</span>`
     : `${icon('inbox',22)}<br>Clique ou arraste o arquivo de áudio aqui<br><span class="hint" style="margin:4px 0 0;">MP3, WAV, M4A, OGG ou WEBM — até 300MB</span>`;
@@ -844,6 +856,10 @@ async function submitAudioMeeting(){
   clearFormError();
   if(!titulo){ showFormError('Preencha o título da reunião.'); return; }
   if(!file){ showFormError('Selecione o arquivo de áudio da reunião.'); return; }
+  if(!isValidAudioFile(file)){
+    showFormError(`"${file.name}" não parece ser um arquivo de áudio. Envie um arquivo .mp3, .wav, .m4a, .ogg ou .webm.`);
+    return;
+  }
 
   setFormBusy(true);
   const fd = new FormData();

@@ -22,6 +22,9 @@ app.use((err, req, res, next) => {
   if (err && err.name === 'MulterError') {
     return res.status(400).json({ error: 'Arquivo de áudio inválido ou grande demais (máximo 300MB).' });
   }
+  if (err && err.message === 'TIPO_DE_ARQUIVO_INVALIDO') {
+    return res.status(400).json({ error: 'Esse arquivo não parece ser um áudio válido. Envie um arquivo .mp3, .wav, .m4a, .ogg ou .webm.' });
+  }
   console.error(err);
   res.status(500).json({ error: err.message || 'Erro interno do servidor.' });
 });

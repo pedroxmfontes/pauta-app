@@ -6,9 +6,16 @@ const { callClaude } = require('../services/anthropic');
 const { uploadAudio, requestTranscript, pollTranscript, buildTranscriptText } = require('../services/assemblyai');
 const { getKnownThemes, buildCorePrompt, buildIntelPrompt } = require('../services/prompts');
 
+const ALLOWED_AUDIO_EXT = /\.(mp3|wav|m4a|ogg|oga|webm|mp4|aac|flac|opus)$/i;
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 300 * 1024 * 1024 } // 300MB
+  limits: { fileSize: 300 * 1024 * 1024 }, // 300MB
+  fileFilter: (req, file, cb) => {
+    const okMime = /^audio\//.test(file.mimetype) || ['video/mp4', 'video/webm'].includes(file.mimetype);
+    const okExt = ALLOWED_AUDIO_EXT.test(file.originalname || '');
+    if (okMime || okExt) return cb(null, true);
+    cb(new Error('TIPO_DE_ARQUIVO_INVALIDO'));
+  }
 });
 
 const router = express.Router();
