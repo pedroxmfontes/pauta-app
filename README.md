@@ -69,7 +69,7 @@ Acesse `http://localhost:3000`.
 
 ## Como funciona o fluxo de nova reunião
 
-1. **Enviar gravação** (padrão): o usuário sobe o arquivo de áudio (mp3, wav, m4a, ogg, webm — até 300MB) e, opcionalmente, os nomes dos participantes na ordem em que costumam falar.
+1. **Enviar gravação** (padrão): o usuário sobe o arquivo de áudio ou vídeo (mp3, wav, m4a, mp4, ogg, webm — até 300MB) e, opcionalmente, os nomes dos participantes na ordem em que costumam falar.
    - O servidor sobe o áudio para a AssemblyAI, pede a transcrição com separação de locutores (`speaker_labels`), espera terminar, mapeia "Locutor A/B/C" para os nomes informados (na ordem de primeira fala) e só então manda o texto para o Claude analisar.
    - Isso acontece em background: o front-end recebe um `jobId` na hora e fica consultando `/api/meetings/jobs/:id` a cada poucos segundos, mostrando o progresso (enviando → transcrevendo → analisando).
    - A duração da reunião é detectada automaticamente a partir do áudio, caso o campo não seja preenchido.

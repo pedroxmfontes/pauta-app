@@ -721,7 +721,7 @@ function newMeetingTemplate(){
       <label>Gravação da reunião</label>
       <div class="file-drop" id="fileDrop">
         <input type="file" id="fAudio" accept="audio/*,video/mp4,video/webm,.m4a,.mp3,.wav,.ogg,.webm">
-        <div id="fileDropText">${icon('inbox',22)}<br>Clique ou arraste o arquivo de áudio aqui<br><span class="hint" style="margin:4px 0 0;">MP3, WAV, M4A, OGG ou WEBM — até 300MB</span></div>
+        <div id="fileDropText">${icon('inbox',22)}<br>Clique ou arraste o arquivo de áudio aqui<br><span class="hint" style="margin:4px 0 0;">MP3, WAV, M4A, MP4, OGG ou WEBM — até 300MB</span></div>
       </div>
     </div>
 
@@ -793,13 +793,13 @@ function updateFileDropLabel(){
   const f = document.getElementById('fAudio').files[0];
   const box = document.getElementById('fileDropText');
   if(f && !isValidAudioFile(f)){
-    showFormError(`"${f.name}" não parece ser um arquivo de áudio. Envie um arquivo .mp3, .wav, .m4a, .ogg ou .webm.`);
+    showFormError(`"${f.name}" não parece ser um arquivo de áudio. Envie um arquivo .mp3, .wav, .m4a, .mp4, .ogg ou .webm.`);
   } else {
     clearFormError();
   }
   box.innerHTML = f
     ? `${icon('doc',22)}<br><b>${escapeHtml(f.name)}</b><br><span class="hint" style="margin:4px 0 0;">${(f.size/1024/1024).toFixed(1)} MB — clique para trocar</span>`
-    : `${icon('inbox',22)}<br>Clique ou arraste o arquivo de áudio aqui<br><span class="hint" style="margin:4px 0 0;">MP3, WAV, M4A, OGG ou WEBM — até 300MB</span>`;
+    : `${icon('inbox',22)}<br>Clique ou arraste o arquivo de áudio aqui<br><span class="hint" style="margin:4px 0 0;">MP3, WAV, M4A, MP4, OGG ou WEBM — até 300MB</span>`;
 }
 
 function setFormBusy(busy){ document.getElementById('btnAnalisar').disabled = busy; }
@@ -857,7 +857,7 @@ async function submitAudioMeeting(){
   if(!titulo){ showFormError('Preencha o título da reunião.'); return; }
   if(!file){ showFormError('Selecione o arquivo de áudio da reunião.'); return; }
   if(!isValidAudioFile(file)){
-    showFormError(`"${file.name}" não parece ser um arquivo de áudio. Envie um arquivo .mp3, .wav, .m4a, .ogg ou .webm.`);
+    showFormError(`"${file.name}" não parece ser um arquivo de áudio. Envie um arquivo .mp3, .wav, .m4a, .mp4, .ogg ou .webm.`);
     return;
   }
 
