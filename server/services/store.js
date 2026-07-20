@@ -77,6 +77,32 @@ function deleteMeeting(id) {
   });
 }
 
+/** Insere reuniões de demonstração já analisadas (sem passar pela IA), marcadas com demo:true. */
+function seedDemoMeetings(demoMeetings) {
+  return serialize(async () => {
+    const db = await readDb();
+    let nextNumero = db.meetings.length ? Math.max(...db.meetings.map(m => m.numero || 0)) + 1 : 1;
+    const inserted = demoMeetings.map(partial => {
+      const meeting = { id: randomUUID(), numero: nextNumero++, demo: true, ...partial };
+      db.meetings.push(meeting);
+      return meeting;
+    });
+    await writeDb(db);
+    return inserted;
+  });
+}
+
+/** Remove só as reuniões de demonstração (demo:true), preservando reuniões reais. */
+function clearDemoMeetings() {
+  return serialize(async () => {
+    const db = await readDb();
+    const before = db.meetings.length;
+    db.meetings = db.meetings.filter(m => !m.demo);
+    await writeDb(db);
+    return before - db.meetings.length;
+  });
+}
+
 async function getDismissedAlerts() {
   const db = await readDb();
   return db.dismissedAlerts;
@@ -95,6 +121,8 @@ module.exports = {
   addMeeting,
   updateMeeting,
   deleteMeeting,
+  seedDemoMeetings,
+  clearDemoMeetings,
   getDismissedAlerts,
   setDismissedAlerts
 };

@@ -5,6 +5,7 @@ const jobs = require('../jobs');
 const { callClaude } = require('../services/anthropic');
 const { uploadAudio, requestTranscript, pollTranscript, buildTranscriptText } = require('../services/assemblyai');
 const { getKnownThemes, buildTranscriptBlock, buildCoreInstructions, buildIntelInstructions, CORE_TOOL, INTEL_TOOL } = require('../services/prompts');
+const { buildDemoMeetings } = require('../services/demoData');
 
 const ALLOWED_AUDIO_EXT = /\.(mp3|wav|m4a|ogg|oga|webm|mp4|aac|flac|opus)$/i;
 const upload = multer({
@@ -105,6 +106,20 @@ router.get('/', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Dados de demonstração: já vêm totalmente analisados, não chamam a IA (custo zero).
+router.post('/demo', async (req, res, next) => {
+  try {
+    await store.seedDemoMeetings(buildDemoMeetings());
+    res.json(await store.listMeetings());
+  } catch (e) { next(e); }
+});
+router.delete('/demo', async (req, res, next) => {
+  try {
+    const removidas = await store.clearDemoMeetings();
+    res.json({ ok: true, removidas });
+  } catch (e) { next(e); }
+});
+
 // Fluxo "colar transcrição" — roda de forma síncrona, igual ao app original.
 router.post('/manual', async (req, res, next) => {
   try {
@@ -183,6 +198,39 @@ router.patch('/:id/tasks/:idx', async (req, res, next) => {
     const meeting = await store.updateMeeting(req.params.id, m => {
       if (!m.analise?.tarefas?.[idx]) throw new Error('Tarefa não encontrada.');
       m.analise.tarefas[idx].concluida = concluida;
+      return m;
+    });
+    res.json(meeting);
+  } catch (e) { next(e); }
+});
+
+// Permite corrigir manualmente o que a IA gerou (resumo, decisões, riscos, tarefas).
+router.patch('/:id/analise', async (req, res, next) => {
+  try {
+    const patch = req.body || {};
+    const meeting = await store.updateMeeting(req.params.id, m => {
+      if (typeof patch.resumo_executivo === 'string') m.analise.resumo_executivo = patch.resumo_executivo;
+      if (Array.isArray(patch.decisoes)) m.analise.decisoes = patch.decisoes.filter(d => typeof d === 'string' && d.trim()).map(d => d.trim());
+      if (Array.isArray(patch.riscos)) {
+        m.analise.riscos = patch.riscos
+          .filter(r => r && typeof r.descricao === 'string' && r.descricao.trim())
+          .map(r => ({
+            descricao: r.descricao.trim(),
+            prioridade: ['baixo', 'medio', 'alto', 'critico'].includes(r.prioridade) ? r.prioridade : 'medio',
+            status: r.status === 'resolvido' ? 'resolvido' : 'aberto'
+          }));
+      }
+      if (Array.isArray(patch.tarefas)) {
+        m.analise.tarefas = patch.tarefas
+          .filter(t => t && typeof t.tarefa === 'string' && t.tarefa.trim())
+          .map(t => ({
+            tarefa: t.tarefa.trim(),
+            responsavel: (t.responsavel || '').trim() || 'não definido',
+            prazo: (t.prazo || '').trim() || 'não definido',
+            critica: !!t.critica,
+            concluida: !!t.concluida
+          }));
+      }
       return m;
     });
     res.json(meeting);

@@ -103,14 +103,23 @@ body{
 .nav-item.active svg{opacity:1; color:var(--blue);}
 .nav-badge{margin-left:auto; font-size:10.5px; font-family:'JetBrains Mono',monospace; background:var(--red-soft); color:var(--red); border-radius:8px; padding:1.5px 6px; font-weight:600;}
 
-input[type=text], input[type=number], textarea{
+input[type=text], input[type=number], textarea, select{
   font-family:'Inter',sans-serif; width:100%;
   background:var(--card); border:1px solid var(--border); color:var(--text);
   border-radius:var(--radius-sm); padding:9px 12px; font-size:13px;
   transition:border-color .15s var(--ease), box-shadow .15s var(--ease);
 }
 input::placeholder, textarea::placeholder{color:var(--text-mute);}
-input:focus, textarea:focus{outline:none; border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-soft);}
+input:focus, textarea:focus, select:focus{outline:none; border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-soft);}
+
+/* edição manual do conteúdo gerado pela IA */
+.edit-list{display:flex; flex-direction:column; gap:8px;}
+.edit-row{display:flex; gap:8px; align-items:center;}
+.edit-row input[type=text]{flex:1;}
+.edit-row select{width:112px; flex-shrink:0;}
+.edit-row-remove{flex-shrink:0; width:32px; height:32px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--card-2); color:var(--text-mute); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:color .15s, border-color .15s;}
+.edit-row-remove:hover{color:var(--red); border-color:var(--red);}
+table.tasks input[type=text]{padding:6px 9px; font-size:12.5px;}
 
 .section-label{font-size:10.5px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-mute); margin:4px 2px 0; font-weight:600;}
 
@@ -451,9 +460,32 @@ table.tasks tr.task-critical-row:hover{background:rgba(239,68,68,.2);}
   .card, .form-card{background:#fff; border:1px solid #ccc; box-shadow:none;}
   .summary-text, ul.plain{color:#000;}
 }
+
+/* landing */
+.landing-overlay{position:fixed; inset:0; z-index:600; background:var(--bg); overflow-y:auto; display:flex; align-items:center; justify-content:center; padding:40px 24px;}
+.landing-card{max-width:640px; width:100%; position:relative; padding:8px;}
+.landing-brand{display:flex; align-items:center; gap:9px; margin-bottom:34px; justify-content:center;}
+.landing-headline{font-size:34px; font-weight:800; letter-spacing:-0.6px; text-align:center; line-height:1.2; margin-bottom:16px;}
+.landing-sub{font-size:15px; color:var(--text-mute); text-align:center; line-height:1.6; max-width:480px; margin:0 auto 36px;}
+.landing-features{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:36px;}
+@media (max-width:560px){.landing-features{grid-template-columns:1fr;}}
+.landing-feature{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; display:flex; gap:12px; align-items:flex-start; box-shadow:var(--shadow-sm);}
+.landing-feature-icon{width:30px; height:30px; border-radius:8px; background:var(--blue-soft); color:var(--blue); display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+.landing-feature-title{font-size:13.5px; font-weight:600; margin-bottom:3px;}
+.landing-feature-text{font-size:12.5px; color:var(--text-mute); line-height:1.5;}
+.landing-cta{display:flex; justify-content:center;}
 </style>
 </head>
 <body>
+<div class="landing-overlay" id="landingOverlay" style="display:none;">
+  <div class="landing-card">
+    <div class="landing-brand"><span class="brand-dot"></span><span class="brand-mark" style="font-size:20px;">Pauta</span></div>
+    <div class="landing-headline">Transforme reuniões em inteligência de negócio</div>
+    <div class="landing-sub">Envie a gravação ou cole a transcrição — o Pauta analisa automaticamente decisões, tarefas, riscos e produtividade de cada reunião, e cruza tudo isso pra revelar padrões que uma reunião isolada não mostra.</div>
+    <div class="landing-features" id="landingFeatures"></div>
+    <div class="landing-cta"><button class="btn primary" id="landingEnterBtn" style="padding:11px 26px; font-size:14px;">Entrar no painel</button></div>
+  </div>
+</div>
 <div class="app">
   <div class="sidebar">
     <div class="brand"><span class="brand-dot"></span><span class="brand-mark">Pauta</span></div>
@@ -494,6 +526,8 @@ table.tasks tr.task-critical-row:hover{background:rgba(239,68,68,.2);}
       <div style="margin-bottom:10px;"><input type="text" id="searchInput" placeholder="Buscar por título ou tema"></div>
       <div class="meeting-list" id="meetingList"></div>
     </div>
+
+    <div id="navPrivacy" tabindex="0" role="button" style="font-size:11.5px; color:var(--text-mute); cursor:pointer; padding:4px 2px; text-decoration:underline; text-decoration-color:var(--border); text-underline-offset:3px;">Como tratamos seus dados</div>
   </div>
 
   <div class="main" id="mainArea"></div>

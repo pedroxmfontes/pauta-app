@@ -6,6 +6,7 @@ let dismissedAlerts = new Set();
 let currentView = 'dashboard';
 let currentId = null;
 let currentMethod = 'audio';
+let detailEditMode = false;
 
 /* ============================================================
    ICON LIBRARY — single source of truth for every icon used
@@ -126,6 +127,7 @@ async function persistDismissedAlerts(){
 }
 function setView(view, id){
   currentView = view; currentId = id || null;
+  detailEditMode = false;
   renderMain(); renderSidebar();
   window.scrollTo({top:0, behavior:'smooth'});
 }
@@ -267,6 +269,98 @@ function taskRowHtml({t,i}){
 function taskBadgesHtml(tc){
   const concluidasCriticas = tc.criticasTotal - tc.criticas;
   return `${badge(tc.pendentes+' pendentes', tc.pendentes?'orange':'mute')}${badge(tc.concluidas+' concluídas', 'green')}${tc.semResp?badge(tc.semResp+' sem responsável','orange'):''}${tc.criticas?badge(tc.criticas+' crítica'+(tc.criticas===1?'':'s')+' em aberto','red'):''}${concluidasCriticas>0?badge(concluidasCriticas+' crítica'+(concluidasCriticas===1?'':'s')+' já concluída'+(concluidasCriticas===1?'':'s'),'mute'):''}`;
+}
+
+/* ============================================================
+   EDIÇÃO MANUAL — permite corrigir o que a IA gerou (resumo,
+   decisões, riscos, tarefas) direto na página de detalhe.
+============================================================ */
+function editRowHtml(value, cls){
+  return `<div class="edit-row"><input type="text" class="${cls}" value="${escapeHtml(value)}"><button type="button" class="edit-row-remove" title="Remover">${icon('x',13)}</button></div>`;
+}
+function resumoSectionHtml(a, editMode){
+  if(!editMode) return `<p class="summary-text">${escapeHtml(a.resumo_executivo || 'Sem resumo disponível.')}</p>`;
+  return `<textarea id="editResumo" style="min-height:110px; line-height:1.7;">${escapeHtml(a.resumo_executivo || '')}</textarea>`;
+}
+function decisoesSectionHtml(a, editMode){
+  const decisoes = a.decisoes || [];
+  if(!editMode){
+    return decisoes.length ? `<ul class="plain">${decisoes.map(d=>`<li>${escapeHtml(d)}</li>`).join('')}</ul>` : '<p class="hint">Nenhuma decisão explícita identificada.</p>';
+  }
+  return `<div id="editDecisoesList" class="edit-list">${decisoes.map(d=>editRowHtml(d,'decision-edit-input')).join('')}</div>
+    <button type="button" class="btn small ghost" id="addDecisaoBtn" style="margin-top:6px;">${icon('check',12)} Adicionar decisão</button>`;
+}
+const RISK_LEVEL_LABEL = {baixo:'Baixo', medio:'Médio', alto:'Alto', critico:'Crítico'};
+const RISK_LEVEL_TONE = {critico:'red', alto:'red', medio:'orange', baixo:'blue'};
+function riskEditRowHtml(r){
+  const opts = ['baixo','medio','alto','critico'];
+  return `<div class="edit-row">
+    <select class="risk-edit-priority">${opts.map(o=>`<option value="${o}" ${r.prioridade===o?'selected':''}>${RISK_LEVEL_LABEL[o]}</option>`).join('')}</select>
+    <input type="text" class="risk-edit-desc" value="${escapeHtml(r.descricao||'')}">
+    <button type="button" class="edit-row-remove" title="Remover">${icon('x',13)}</button>
+  </div>`;
+}
+function riscosSectionHtml(a, editMode){
+  const riscos = a.riscos || [];
+  if(!editMode){
+    if(!riscos.length) return '';
+    return `<div class="card">
+      ${cardTitle(`Riscos identificados (${riscos.length})`, 'flag')}
+      <div class="coach-list">${riscos.map(r=>`<div class="coach-item">${badge(RISK_LEVEL_LABEL[r.prioridade]||r.prioridade, RISK_LEVEL_TONE[r.prioridade]||'mute')}<span>${escapeHtml(r.descricao)}</span></div>`).join('')}</div>
+    </div>`;
+  }
+  return `<div class="card">
+    ${cardTitle('Riscos identificados', 'flag')}
+    <div id="editRiscosList" class="edit-list">${riscos.map(riskEditRowHtml).join('')}</div>
+    <button type="button" class="btn small ghost" id="addRiscoBtn" style="margin-top:6px;">${icon('flag',12)} Adicionar risco</button>
+  </div>`;
+}
+function taskEditRowHtml(t){
+  const responsavel = t.responsavel==='não definido' ? '' : (t.responsavel||'');
+  const prazo = t.prazo==='não definido' ? '' : (t.prazo||'');
+  return `<tr>
+    <td><input type="checkbox" class="task-edit-concluida" title="Concluída" ${t.concluida?'checked':''}></td>
+    <td><input type="text" class="task-edit-tarefa" value="${escapeHtml(t.tarefa||'')}"></td>
+    <td><input type="text" class="task-edit-responsavel" value="${escapeHtml(responsavel)}" placeholder="não definido"></td>
+    <td><input type="text" class="task-edit-prazo" value="${escapeHtml(prazo)}" placeholder="não definido"></td>
+    <td style="text-align:center;"><input type="checkbox" class="task-edit-critica" title="Crítica" ${t.critica?'checked':''}></td>
+    <td><button type="button" class="edit-row-remove" title="Remover">${icon('x',13)}</button></td>
+  </tr>`;
+}
+function tarefasSectionHtml(a, editMode){
+  const tarefas = a.tarefas || [];
+  if(!editMode){
+    return tarefas.length ? `
+      <table class="tasks">
+        <thead><tr><th></th><th>Tarefa</th><th>Responsável</th><th>Prazo</th><th></th></tr></thead>
+        <tbody>${sortTasksForDisplay(tarefas).map(taskRowHtml).join('')}</tbody>
+      </table>` : '<p class="hint">Nenhuma tarefa identificada.</p>';
+  }
+  return `
+    <table class="tasks" id="editTarefasTable">
+      <thead><tr><th></th><th>Tarefa</th><th>Responsável</th><th>Prazo</th><th title="Crítica">!</th><th></th></tr></thead>
+      <tbody>${tarefas.map(taskEditRowHtml).join('')}</tbody>
+    </table>
+    <button type="button" class="btn small ghost" id="addTarefaBtn" style="margin-top:10px;">${icon('checkTasks',12)} Adicionar tarefa</button>`;
+}
+/** Lê os campos editáveis da tela e monta o payload pra salvar de uma vez. */
+function collectDetailEdits(){
+  const resumo_executivo = document.getElementById('editResumo').value.trim();
+  const decisoes = Array.from(document.querySelectorAll('.decision-edit-input')).map(el=>el.value.trim()).filter(Boolean);
+  const riscoRows = Array.from(document.querySelectorAll('#editRiscosList .edit-row'));
+  const riscos = riscoRows.map(row=>({
+    descricao: row.querySelector('.risk-edit-desc').value.trim(),
+    prioridade: row.querySelector('.risk-edit-priority').value
+  })).filter(r=>r.descricao);
+  const taskRows = Array.from(document.querySelectorAll('#editTarefasTable tbody tr'));
+  const tarefas = taskRows.map(row=>({
+    tarefa: row.querySelector('.task-edit-tarefa').value.trim(),
+    responsavel: row.querySelector('.task-edit-responsavel').value.trim(),
+    prazo: row.querySelector('.task-edit-prazo').value.trim(),
+    critica: row.querySelector('.task-edit-critica').checked,
+    concluida: row.querySelector('.task-edit-concluida').checked
+  })).filter(t=>t.tarefa);
+  return { resumo_executivo, decisoes, riscos, tarefas };
 }
 function comparisonCardHtml(m, scoreLabels){
   const cmp = buildComparison(m, scoreLabels);
@@ -600,6 +694,7 @@ function renderMain(){
   else if(currentView==='search') html = searchTemplate();
   else if(currentView==='risks') html = risksTemplate();
   else if(currentView==='alerts') html = alertsTemplate();
+  else if(currentView==='privacy') html = privacyTemplate();
 
   main.innerHTML = `<div class="view-fade">${html}</div>`;
 
@@ -622,8 +717,14 @@ function dashboardTemplate(){
     <div class="eyebrow">Dashboard executivo</div>
     <div class="page-title">Central de inteligência de reuniões</div>
     <div class="page-sub">Um painel único com produtividade, decisões, pendências e padrões de todas as reuniões da empresa.</div>
-    ${emptyStateHtml('inbox', 'Nenhuma reunião analisada ainda', 'Envie a gravação de uma reunião para começar a ver score de produtividade, tempo desperdiçado, tarefas por responsável e todos os indicadores aqui.', '<button class="btn primary" id="emptyNewBtn">+ Nova reunião</button>')}`;
+    ${emptyStateHtml('inbox', 'Nenhuma reunião analisada ainda', 'Envie a gravação de uma reunião para começar a ver score de produtividade, tempo desperdiçado, tarefas por responsável e todos os indicadores aqui.', `
+      <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+        <button class="btn primary" id="emptyNewBtn">+ Nova reunião</button>
+        <button class="btn" id="emptyDemoBtn">${icon('spark',13)} Ver com dados de exemplo</button>
+      </div>
+    `)}`;
   }
+  const hasDemo = meetings.some(m=>m.demo);
   const s = aggregateExec();
   const recent = meetings.slice().sort((a,b)=>b.criadoEm-a.criadoEm).slice(0,6);
   const chron = meetings.slice().sort((a,b)=>a.criadoEm-b.criadoEm);
@@ -635,6 +736,11 @@ function dashboardTemplate(){
   <div class="eyebrow">Dashboard executivo</div>
   <div class="page-title">Central de inteligência de reuniões</div>
   <div class="page-sub">${s.total} reunião(ões) analisada(s) · atualizado agora</div>
+
+  ${hasDemo ? `<div class="error-box" style="background:var(--blue-soft); border-color:rgba(59,130,246,.4); color:var(--text-dim);">
+    ${icon('spark',15)} Estes são dados de demonstração de uma empresa fictícia — pra você ver o produto funcionando.
+    <button class="btn small" id="removeDemoBtn" style="margin-left:auto; flex-shrink:0;">Remover exemplo</button>
+  </div>` : ''}
 
   <div class="narrative-card">
     ${cardTitle('Resumo executivo', 'spark')}
@@ -689,6 +795,38 @@ function recentRowHtml(m){
 function bindDashboard(){
   const b = document.getElementById('emptyNewBtn'); if(b) b.addEventListener('click', ()=>setView('new'));
   document.querySelectorAll('.list-row').forEach(el=>makeClickable(el, ()=>setView('detail', el.dataset.id)));
+
+  const demoBtn = document.getElementById('emptyDemoBtn');
+  if(demoBtn) demoBtn.addEventListener('click', async ()=>{
+    demoBtn.disabled = true;
+    try{
+      const res = await fetch('/api/meetings/demo', { method:'POST' });
+      const data = await readJsonSafe(res);
+      if(!res.ok) throw new Error(data.error || 'Falha ao carregar o exemplo.');
+      meetings = data;
+      showToast('Dados de exemplo carregados.', 'success');
+      renderSidebar(); renderMain();
+    }catch(e){
+      demoBtn.disabled = false;
+      showToast('Não foi possível carregar o exemplo: ' + e.message, 'error');
+    }
+  });
+
+  const removeBtn = document.getElementById('removeDemoBtn');
+  if(removeBtn) removeBtn.addEventListener('click', async ()=>{
+    const ok = await showConfirm('As reuniões de exemplo (marcadas como demonstração) serão removidas. Suas reuniões reais não são afetadas.', 'Remover exemplo', 'Remover dados de demonstração?');
+    if(!ok) return;
+    try{
+      const res = await fetch('/api/meetings/demo', { method:'DELETE' });
+      const data = await readJsonSafe(res);
+      if(!res.ok) throw new Error(data.error || 'Falha ao remover o exemplo.');
+      meetings = meetings.filter(m=>!m.demo);
+      showToast('Dados de exemplo removidos.', 'success');
+      renderSidebar(); renderMain();
+    }catch(e){
+      showToast('Não foi possível remover o exemplo: ' + e.message, 'error');
+    }
+  });
 }
 
 /* ============================================================
@@ -946,18 +1084,24 @@ function detailTemplate(m){
     </div>
     <div class="detail-actions">
       <span class="score-pill" style="background:${scoreColor(os)}22; color:${scoreColor(os)}; font-size:16px; padding:7px 15px;">${os ?? '—'}</span>
-      <button class="btn small" id="btnExportMd">${icon('doc',13)} .md</button>
-      <button class="btn small" id="btnExportCsv">${icon('checkTasks',13)} CSV</button>
-      <button class="btn small" id="btnExportPdf">${icon('doc',13)} PDF</button>
-      <button class="btn small danger" id="btnExcluir">Excluir</button>
+      ${detailEditMode ? `
+        <button class="btn small" id="btnCancelEdit">Cancelar</button>
+        <button class="btn small primary" id="btnSaveEdit">${icon('check',13)} Salvar alterações</button>
+      ` : `
+        <button class="btn small" id="btnEditToggle">${icon('doc',13)} Editar</button>
+        <button class="btn small" id="btnExportMd">${icon('doc',13)} .md</button>
+        <button class="btn small" id="btnExportCsv">${icon('checkTasks',13)} CSV</button>
+        <button class="btn small" id="btnExportPdf">${icon('doc',13)} PDF</button>
+        <button class="btn small danger" id="btnExcluir">Excluir</button>
+      `}
     </div>
   </div>
 
   <div class="stack-col">
     <div class="card">
       ${cardTitle('Resumo executivo', 'doc')}
-      <p class="summary-text">${escapeHtml(a.resumo_executivo || 'Sem resumo disponível.')}</p>
-      <div class="tag-grid">
+      ${resumoSectionHtml(a, detailEditMode)}
+      ${!detailEditMode ? `<div class="tag-grid">
         <div><div class="hint" style="margin-bottom:9px;">Tópicos</div><div class="tags">${(a.topicos||[]).map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('') || '<span class="hint">Nenhum identificado.</span>'}</div></div>
         <div><div class="hint" style="margin-bottom:9px;">Palavras-chave</div><div class="tags">${(a.palavras_chave||[]).map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('') || '<span class="hint">Nenhuma identificada.</span>'}</div></div>
       </div>
@@ -965,7 +1109,7 @@ function detailTemplate(m){
       <div class="tag-grid">
         <div><div class="hint" style="margin-bottom:9px;">Clientes citados</div><div class="tags">${(a.clientes_citados||[]).map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('') || '<span class="hint">Nenhum citado.</span>'}</div></div>
         <div><div class="hint" style="margin-bottom:9px;">Produtos / projetos</div><div class="tags">${(a.produtos_ou_projetos_citados||[]).map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('') || '<span class="hint">Nenhum citado.</span>'}</div></div>
-      </div>` : ''}
+      </div>` : ''}` : '<p class="hint" style="margin-top:8px;">Tópicos, palavras-chave e clientes citados não são editáveis por aqui.</p>'}
     </div>
 
     <div class="card">
@@ -981,36 +1125,21 @@ function detailTemplate(m){
         </div>`).join('')}</div>` : '<p class="hint">Sem score disponível — reanalise a reunião.</p>'}
     </div>
 
-    ${comparisonCardHtml(m, scoreLabels)}
+    ${!detailEditMode ? comparisonCardHtml(m, scoreLabels) : ''}
 
     <div class="card">
-      ${cardTitle(`Decisões tomadas (${(a.decisoes||[]).length})`, 'check')}
-      ${(a.decisoes?.length) ? `<ul class="plain">${a.decisoes.map(d=>`<li>${escapeHtml(d)}</li>`).join('')}</ul>` : '<p class="hint">Nenhuma decisão explícita identificada.</p>'}
+      ${cardTitle(`Decisões tomadas${detailEditMode?'':' ('+(a.decisoes||[]).length+')'}`, 'check')}
+      ${decisoesSectionHtml(a, detailEditMode)}
     </div>
 
-    ${(a.riscos?.length) ? `<div class="card">
-      ${cardTitle(`Riscos identificados (${a.riscos.length})`, 'flag')}
-      <div class="coach-list">${a.riscos.map(r=>{
-        const nivelTone = {critico:'red', alto:'red', medio:'orange', baixo:'blue'}[r.prioridade] || 'mute';
-        const nivelLabel = {critico:'Crítico', alto:'Alto', medio:'Médio', baixo:'Baixo'}[r.prioridade] || r.prioridade;
-        return `<div class="coach-item">${badge(nivelLabel, nivelTone)}<span>${escapeHtml(r.descricao)}</span></div>`;
-      }).join('')}</div>
-    </div>` : ''}
+    ${riscosSectionHtml(a, detailEditMode)}
 
     <div class="card">
       <div class="card-title-row">
         ${cardTitle('Tarefas', 'checkTasks')}
-        <div id="taskBadges" style="display:flex; gap:6px; flex-wrap:wrap;">
-          ${taskBadgesHtml(tc)}
-        </div>
+        ${!detailEditMode ? `<div id="taskBadges" style="display:flex; gap:6px; flex-wrap:wrap;">${taskBadgesHtml(tc)}</div>` : ''}
       </div>
-      ${(a.tarefas?.length) ? `
-      <table class="tasks">
-        <thead><tr><th></th><th>Tarefa</th><th>Responsável</th><th>Prazo</th><th></th></tr></thead>
-        <tbody>
-          ${sortTasksForDisplay(a.tarefas).map(taskRowHtml).join('')}
-        </tbody>
-      </table>` : '<p class="hint">Nenhuma tarefa identificada.</p>'}
+      ${tarefasSectionHtml(a, detailEditMode)}
     </div>
 
     <div class="grid-2" style="margin-bottom:0;">
@@ -1045,6 +1174,64 @@ function detailTemplate(m){
 }
 function bindDetailActions(m){
   if(!m) return;
+
+  if(detailEditMode){
+    document.getElementById('btnCancelEdit').addEventListener('click', ()=>{
+      detailEditMode = false;
+      renderMain();
+    });
+    document.getElementById('btnSaveEdit').addEventListener('click', async (e)=>{
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      const payload = collectDetailEdits();
+      try{
+        const res = await fetch(`/api/meetings/${m.id}/analise`, {
+          method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+        });
+        const data = await readJsonSafe(res);
+        if(!res.ok) throw new Error(data.error || 'Falha ao salvar as alterações.');
+        Object.assign(m.analise, data.analise);
+        detailEditMode = false;
+        showToast('Alterações salvas.', 'success');
+        renderMain(); renderSidebar();
+      }catch(err){
+        btn.disabled = false;
+        showToast('Não foi possível salvar: ' + err.message, 'error');
+      }
+    });
+
+    const wireRemove = (row) => { const b = row.querySelector('.edit-row-remove'); if(b) b.addEventListener('click', ()=>row.remove()); };
+    document.querySelectorAll('.edit-row').forEach(wireRemove);
+    document.querySelectorAll('#editTarefasTable tbody tr').forEach(wireRemove);
+
+    const addDecisaoBtn = document.getElementById('addDecisaoBtn');
+    if(addDecisaoBtn) addDecisaoBtn.addEventListener('click', ()=>{
+      const list = document.getElementById('editDecisoesList');
+      list.insertAdjacentHTML('beforeend', editRowHtml('', 'decision-edit-input'));
+      wireRemove(list.lastElementChild);
+      list.lastElementChild.querySelector('input').focus();
+    });
+    const addRiscoBtn = document.getElementById('addRiscoBtn');
+    if(addRiscoBtn) addRiscoBtn.addEventListener('click', ()=>{
+      const list = document.getElementById('editRiscosList');
+      list.insertAdjacentHTML('beforeend', riskEditRowHtml({descricao:'', prioridade:'medio'}));
+      wireRemove(list.lastElementChild);
+      list.lastElementChild.querySelector('input').focus();
+    });
+    const addTarefaBtn = document.getElementById('addTarefaBtn');
+    if(addTarefaBtn) addTarefaBtn.addEventListener('click', ()=>{
+      const tbody = document.querySelector('#editTarefasTable tbody');
+      tbody.insertAdjacentHTML('beforeend', taskEditRowHtml({tarefa:'', responsavel:'', prazo:'', critica:false, concluida:false}));
+      wireRemove(tbody.lastElementChild);
+      tbody.lastElementChild.querySelector('input').focus();
+    });
+    return;
+  }
+
+  document.getElementById('btnEditToggle').addEventListener('click', ()=>{
+    detailEditMode = true;
+    renderMain();
+  });
   document.getElementById('btnExportMd').addEventListener('click', ()=>{ exportMd(m); showToast('Relatório .md exportado.', 'success'); });
   document.getElementById('btnExportCsv').addEventListener('click', ()=>{ exportCsv(m); showToast('Tarefas exportadas em CSV.', 'success'); });
   document.getElementById('btnExportPdf').addEventListener('click', ()=>window.print());
@@ -1285,6 +1472,54 @@ async function runSearch(){
 }
 
 /* ============================================================
+   PRIVACY — transparência honesta sobre onde os dados ficam e
+   quem tem acesso, incluindo as limitações atuais do sistema.
+============================================================ */
+function privacyTemplate(){
+  return `
+  <div class="eyebrow">Privacidade</div>
+  <div class="page-title">Como tratamos seus dados</div>
+  <div class="page-sub">Uma explicação direta de onde as informações que você sobe aqui ficam guardadas e quem consegue acessá-las.</div>
+
+  <div class="stack-col">
+    <div class="card">
+      ${cardTitle('O que coletamos', 'doc')}
+      <ul class="plain">
+        <li>A transcrição da reunião (colada por você ou gerada a partir do áudio enviado)</li>
+        <li>Título, participantes informados e duração</li>
+        <li>O arquivo de áudio original, apenas durante o processo de transcrição</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      ${cardTitle('Quem processa essa informação', 'compass')}
+      <p class="summary-text">A transcrição é enviada para dois serviços externos, só para responder a cada pedido específico:</p>
+      <ul class="plain">
+        <li><b>Anthropic (Claude)</b> — gera o resumo, decisões, tarefas, riscos e demais análises.</li>
+        <li><b>AssemblyAI</b> — transcreve o áudio quando você usa a opção "Enviar gravação".</li>
+      </ul>
+      <p class="hint">Consulte as políticas de privacidade de cada empresa para entender como elas tratam os dados recebidos por API.</p>
+    </div>
+
+    <div class="card">
+      ${cardTitle('Onde fica armazenado — e as limitações de hoje', 'flag')}
+      <p class="summary-text">As reuniões analisadas ficam guardadas em um arquivo no servidor que hospeda este site. Duas limitações importantes, sendo honesto:</p>
+      <ul class="plain">
+        <li><b>Sem login:</b> hoje não existe separação por usuário — qualquer pessoa com o link deste site consegue ver, editar e excluir todas as reuniões salvas.</li>
+        <li><b>Persistência do plano gratuito:</b> se o servidor ficar muito tempo sem uso, o plano de hospedagem gratuito pode reiniciar o serviço e os dados salvos podem se perder.</li>
+      </ul>
+      <p class="hint">Por isso, recomendamos usar este site para reuniões internas de baixo risco, não para informações financeiras ou de clientes que exijam controle de acesso.</p>
+    </div>
+
+    <div class="card">
+      ${cardTitle('Como remover seus dados', 'checkTasks')}
+      <p class="summary-text">Qualquer reunião pode ser apagada permanentemente a qualquer momento, pelo botão "Excluir" na página de detalhe dela.</p>
+    </div>
+  </div>
+  `;
+}
+
+/* ============================================================
    RISKS — riscos que a IA identifica durante a análise de cada
    reunião (atrasos, orçamento, fornecedores, clientes, equipe...)
 ============================================================ */
@@ -1409,7 +1644,36 @@ makeClickable(document.getElementById('navTimeline'), ()=>setView('timeline'));
 makeClickable(document.getElementById('navSearch'), ()=>setView('search'));
 makeClickable(document.getElementById('navRisks'), ()=>setView('risks'));
 makeClickable(document.getElementById('navAlerts'), ()=>setView('alerts'));
+makeClickable(document.getElementById('navPrivacy'), ()=>setView('privacy'));
 document.getElementById('searchInput').addEventListener('input', renderSidebar);
+
+/* ============================================================
+   LANDING — vitrine mostrada antes do painel, até o usuário
+   clicar em "Entrar". Fica lembrado no navegador (localStorage).
+============================================================ */
+const LANDING_SEEN_KEY = 'pautaLandingVisto';
+function initLanding(){
+  const overlay = document.getElementById('landingOverlay');
+  const features = document.getElementById('landingFeatures');
+  features.innerHTML = [
+    { ic:'spark', t:'Análise automática', d:'Resumo, decisões e tarefas gerados pela IA a cada reunião analisada.' },
+    { ic:'flag', t:'IA de riscos', d:'Atrasos, estouro de orçamento e clientes insatisfeitos, identificados sozinhos.' },
+    { ic:'compass', t:'Memória corporativa', d:'Pergunte sobre qualquer reunião passada e receba a fonte exata usada.' },
+    { ic:'target', t:'Dashboard executivo', d:'Produtividade, tendências e prioridades da empresa em um painel só.' }
+  ].map(f=>`<div class="landing-feature">
+    <span class="landing-feature-icon">${icon(f.ic,15)}</span>
+    <div><div class="landing-feature-title">${escapeHtml(f.t)}</div><div class="landing-feature-text">${escapeHtml(f.d)}</div></div>
+  </div>`).join('');
+
+  if(!localStorage.getItem(LANDING_SEEN_KEY)){
+    overlay.style.display = 'flex';
+  }
+  document.getElementById('landingEnterBtn').addEventListener('click', ()=>{
+    localStorage.setItem(LANDING_SEEN_KEY, '1');
+    overlay.style.display = 'none';
+  });
+}
 
 renderMain();
 loadMeetings();
+initLanding();
