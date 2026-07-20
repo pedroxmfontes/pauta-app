@@ -4,7 +4,7 @@ const store = require('../services/store');
 const jobs = require('../jobs');
 const { callClaude } = require('../services/anthropic');
 const { uploadAudio, requestTranscript, pollTranscript, buildTranscriptText } = require('../services/assemblyai');
-const { getKnownThemes, buildCorePrompt, buildIntelPrompt, CORE_TOOL, INTEL_TOOL } = require('../services/prompts');
+const { getKnownThemes, buildTranscriptBlock, buildCoreInstructions, buildIntelInstructions, CORE_TOOL, INTEL_TOOL } = require('../services/prompts');
 
 const ALLOWED_AUDIO_EXT = /\.(mp3|wav|m4a|ogg|oga|webm|mp4|aac|flac|opus)$/i;
 const upload = multer({
@@ -49,27 +49,33 @@ async function runAnalysis({ titulo, participantesList, duracaoMin, transcricao 
   const meetingsSoFar = await store.listMeetings();
   const temasConhecidos = getKnownThemes(meetingsSoFar);
 
-  const core = await callClaude(
-    buildCorePrompt({
+  // O bloco de transcrição e a lista de tools são IDÊNTICOS nas duas chamadas a seguir —
+  // isso permite que a segunda (intel) reaproveite o cache de prompt escrito pela primeira
+  // (core), já que a transcrição costuma ser o maior custo em tokens de cada análise.
+  const transcriptBlock = buildTranscriptBlock(transcricao);
+  const sharedTools = [CORE_TOOL, INTEL_TOOL];
+
+  const core = await callClaude({
+    content: [transcriptBlock, buildCoreInstructions({
       titulo,
       participantesInformados: participantesList.join(', ') || 'não informado',
-      transcricao,
       temasConhecidos
-    }),
-    CORE_TOOL,
-    { maxTokens: 2500 }
-  );
+    })],
+    tools: sharedTools,
+    toolName: CORE_TOOL.name,
+    maxTokens: 2500
+  });
 
-  const intel = await callClaude(
-    buildIntelPrompt({
+  const intel = await callClaude({
+    content: [transcriptBlock, buildIntelInstructions({
       resumo: core.resumo_executivo || '',
       decisoesCount: (core.decisoes || []).length,
-      tarefasCount: (core.tarefas || []).length,
-      transcricao
-    }),
-    INTEL_TOOL,
-    { maxTokens: 1200 }
-  );
+      tarefasCount: (core.tarefas || []).length
+    })],
+    tools: sharedTools,
+    toolName: INTEL_TOOL.name,
+    maxTokens: 1200
+  });
 
   const tarefasComStatus = (core.tarefas || []).map(t => ({ ...t, concluida: false, critica: !!t.critica }));
   const participantesAnalise = parseSpeakers(transcricao, tarefasComStatus);

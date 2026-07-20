@@ -138,9 +138,19 @@ const SEARCH_TOOL = {
    PROMPTS — instruções de comportamento. O formato de saída
    já é garantido pelo schema da tool, então o texto foca só
    em COMO a IA deve pensar sobre o conteúdo.
+
+   O bloco de transcrição fica separado das instruções e é marcado
+   como "cacheable": as chamadas core/intel usam o MESMO bloco de
+   transcrição e a MESMA lista de tools, então a segunda chamada
+   reaproveita o cache de prompt escrito pela primeira (a transcrição
+   é o maior custo em tokens de cada análise, e hoje é enviada duas vezes).
 ============================================================ */
-function buildCorePrompt({ titulo, participantesInformados, transcricao, temasConhecidos }) {
-  return `Você é um analista de reuniões corporativas de nível executivo. Leia a transcrição abaixo e preencha os dados da análise com a ferramenta fornecida.
+function buildTranscriptBlock(transcricao) {
+  return { text: `Transcrição da reunião:\n"""\n${transcricao}\n"""`, cacheable: true };
+}
+
+function buildCoreInstructions({ titulo, participantesInformados, temasConhecidos }) {
+  return { text: `Você é um analista de reuniões corporativas de nível executivo. Leia a transcrição acima e preencha os dados da análise com a ferramenta "reportar_analise_reuniao".
 
 Marque "critica": true só para tarefas realmente urgentes ou de alto impacto (prazos apertados, risco financeiro, cliente insatisfeito). Não invente decisões, tarefas, clientes ou riscos que não estão no texto — use listas vazias quando não houver.
 Para "riscos", identifique apenas sinais reais de risco ao negócio (atrasos, estouro de orçamento, fornecedor não respondendo, cliente insatisfeito, falta de equipe, dependência crítica não resolvida). Não crie risco a partir de conversa neutra.
@@ -149,45 +159,44 @@ Estes tópicos já foram usados em reuniões anteriores da mesma empresa: ${tema
 Se algum assunto desta reunião for o mesmo de algum desses tópicos, reutilize EXATAMENTE a mesma grafia (mesmas palavras, sem sinônimos) em "topicos", para manter consistência no histórico. Só use uma grafia nova se o assunto realmente for diferente.` : ''}
 
 Título: ${titulo}
-Participantes informados: ${participantesInformados || 'não informado'}
-
-Transcrição:
-"""
-${transcricao}
-"""`;
+Participantes informados: ${participantesInformados || 'não informado'}` };
 }
 
-function buildIntelPrompt({ resumo, decisoesCount, tarefasCount, transcricao }) {
-  return `Você é um consultor de produtividade corporativa, rigoroso e realista (não dê notas altas por padrão). Com base no resumo e na transcrição abaixo, preencha os indicadores com a ferramenta fornecida.
+function buildIntelInstructions({ resumo, decisoesCount, tarefasCount }) {
+  return { text: `Você é um consultor de produtividade corporativa, rigoroso e realista (não dê notas altas por padrão). Com base no resumo e na transcrição acima, preencha os indicadores com a ferramenta "reportar_indicadores_reuniao".
 
 Resumo: ${resumo}
 Decisões tomadas: ${decisoesCount}
-Tarefas identificadas: ${tarefasCount}
-
-Transcrição:
-"""
-${transcricao}
-"""`;
+Tarefas identificadas: ${tarefasCount}` };
 }
 
-function buildInsightsPrompt(dados) {
-  return `Você é um analista de inteligência de negócios. Abaixo está um conjunto de dados de reuniões da mesma empresa. Preencha os insights com a ferramenta fornecida.
+function buildInsightsBlock(dados) {
+  return {
+    text: `Você é um analista de inteligência de negócios. Abaixo está um conjunto de dados de reuniões da mesma empresa. Preencha os insights com a ferramenta fornecida.
 
 Dados:
-${JSON.stringify(dados)}`;
+${JSON.stringify(dados)}`,
+    cacheable: true
+  };
 }
 
-function buildSearchPrompt(query, dados) {
-  return `Você é um assistente que responde perguntas sobre um histórico de reuniões corporativas. Use apenas os dados fornecidos. Se a resposta não estiver nos dados, diga isso claramente e use confiança "baixa".
-
-Pergunta: ${query}
+function buildSearchDadosBlock(dados) {
+  return {
+    text: `Você é um assistente que responde perguntas sobre um histórico de reuniões corporativas. Use apenas os dados fornecidos. Se a resposta não estiver nos dados, diga isso claramente e use confiança "baixa".
 
 Dados das reuniões:
-${JSON.stringify(dados)}`;
+${JSON.stringify(dados)}`,
+    cacheable: true
+  };
+}
+
+function buildSearchQuestionBlock(query) {
+  return { text: `Pergunta: ${query}` };
 }
 
 module.exports = {
   getKnownThemes,
-  buildCorePrompt, buildIntelPrompt, buildInsightsPrompt, buildSearchPrompt,
+  buildTranscriptBlock, buildCoreInstructions, buildIntelInstructions,
+  buildInsightsBlock, buildSearchDadosBlock, buildSearchQuestionBlock,
   CORE_TOOL, INTEL_TOOL, INSIGHTS_TOOL, SEARCH_TOOL
 };
