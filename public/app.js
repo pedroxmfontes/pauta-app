@@ -694,7 +694,6 @@ function renderMain(){
   else if(currentView==='search') html = searchTemplate();
   else if(currentView==='risks') html = risksTemplate();
   else if(currentView==='alerts') html = alertsTemplate();
-  else if(currentView==='privacy') html = privacyTemplate();
 
   main.innerHTML = `<div class="view-fade">${html}</div>`;
 
@@ -1472,54 +1471,6 @@ async function runSearch(){
 }
 
 /* ============================================================
-   PRIVACY — transparência honesta sobre onde os dados ficam e
-   quem tem acesso, incluindo as limitações atuais do sistema.
-============================================================ */
-function privacyTemplate(){
-  return `
-  <div class="eyebrow">Privacidade</div>
-  <div class="page-title">Como tratamos seus dados</div>
-  <div class="page-sub">Uma explicação direta de onde as informações que você sobe aqui ficam guardadas e quem consegue acessá-las.</div>
-
-  <div class="stack-col">
-    <div class="card">
-      ${cardTitle('O que coletamos', 'doc')}
-      <ul class="plain">
-        <li>A transcrição da reunião (colada por você ou gerada a partir do áudio enviado)</li>
-        <li>Título, participantes informados e duração</li>
-        <li>O arquivo de áudio original, apenas durante o processo de transcrição</li>
-      </ul>
-    </div>
-
-    <div class="card">
-      ${cardTitle('Quem processa essa informação', 'compass')}
-      <p class="summary-text">A transcrição é enviada para dois serviços externos, só para responder a cada pedido específico:</p>
-      <ul class="plain">
-        <li><b>Anthropic (Claude)</b> — gera o resumo, decisões, tarefas, riscos e demais análises.</li>
-        <li><b>AssemblyAI</b> — transcreve o áudio quando você usa a opção "Enviar gravação".</li>
-      </ul>
-      <p class="hint">Consulte as políticas de privacidade de cada empresa para entender como elas tratam os dados recebidos por API.</p>
-    </div>
-
-    <div class="card">
-      ${cardTitle('Onde fica armazenado — e as limitações de hoje', 'flag')}
-      <p class="summary-text">As reuniões analisadas ficam guardadas em um arquivo no servidor que hospeda este site. Duas limitações importantes, sendo honesto:</p>
-      <ul class="plain">
-        <li><b>Sem login:</b> hoje não existe separação por usuário — qualquer pessoa com o link deste site consegue ver, editar e excluir todas as reuniões salvas.</li>
-        <li><b>Persistência do plano gratuito:</b> se o servidor ficar muito tempo sem uso, o plano de hospedagem gratuito pode reiniciar o serviço e os dados salvos podem se perder.</li>
-      </ul>
-      <p class="hint">Por isso, recomendamos usar este site para reuniões internas de baixo risco, não para informações financeiras ou de clientes que exijam controle de acesso.</p>
-    </div>
-
-    <div class="card">
-      ${cardTitle('Como remover seus dados', 'checkTasks')}
-      <p class="summary-text">Qualquer reunião pode ser apagada permanentemente a qualquer momento, pelo botão "Excluir" na página de detalhe dela.</p>
-    </div>
-  </div>
-  `;
-}
-
-/* ============================================================
    RISKS — riscos que a IA identifica durante a análise de cada
    reunião (atrasos, orçamento, fornecedores, clientes, equipe...)
 ============================================================ */
@@ -1644,7 +1595,6 @@ makeClickable(document.getElementById('navTimeline'), ()=>setView('timeline'));
 makeClickable(document.getElementById('navSearch'), ()=>setView('search'));
 makeClickable(document.getElementById('navRisks'), ()=>setView('risks'));
 makeClickable(document.getElementById('navAlerts'), ()=>setView('alerts'));
-makeClickable(document.getElementById('navPrivacy'), ()=>setView('privacy'));
 document.getElementById('searchInput').addEventListener('input', renderSidebar);
 
 /* ============================================================
