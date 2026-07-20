@@ -1,7 +1,7 @@
 const express = require('express');
 const store = require('../services/store');
 const { callClaude } = require('../services/anthropic');
-const { buildSearchPrompt } = require('../services/prompts');
+const { buildSearchPrompt, SEARCH_TOOL } = require('../services/prompts');
 
 const router = express.Router();
 
@@ -24,11 +24,16 @@ router.post('/', async (req, res, next) => {
       topicos: m.analise?.topicos || [],
       clientes: m.analise?.clientes_citados || []
     }));
-    const r = await callClaude(buildSearchPrompt(String(query).trim(), dados), { maxTokens: 900 });
+    const r = await callClaude(buildSearchPrompt(String(query).trim(), dados), SEARCH_TOOL, { maxTokens: 900 });
 
     const fontes = (r.fontes || []).map(f => {
       const match = meetings.find(m => m.titulo === f.titulo);
-      return { ...f, meetingId: match ? match.id : null };
+      return {
+        ...f,
+        meetingId: match ? match.id : null,
+        data: match ? match.criadoEm : null,
+        participantes: match ? match.participantes : []
+      };
     });
     res.json({ ...r, fontes });
   } catch (e) { next(e); }

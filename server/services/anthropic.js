@@ -2,10 +2,13 @@ const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 
 /**
- * Chama o Claude com um prompt que pede JSON puro de volta.
+ * Chama o Claude forçando o uso de uma "tool" com schema fixo (tool use / structured output),
+ * em vez de pedir JSON em prosa. Isso garante que a resposta já vem parseada e no formato
+ * esperado, eliminando a necessidade de "arrancar" JSON de um texto livre (e os erros que
+ * isso causava quando a IA envolvia a resposta em texto extra ou crases).
  * A chave de API nunca sai do servidor — o front-end só chama nossas próprias rotas.
  */
-async function callClaude(prompt, { maxTokens = 1500 } = {}) {
+async function callClaude(prompt, tool, { maxTokens = 1500 } = {}) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error('ANTHROPIC_API_KEY não está configurada no servidor (veja o arquivo .env).');
@@ -24,7 +27,9 @@ async function callClaude(prompt, { maxTokens = 1500 } = {}) {
       body: JSON.stringify({
         model,
         max_tokens: maxTokens,
-        messages: [{ role: 'user', content: prompt }]
+        messages: [{ role: 'user', content: prompt }],
+        tools: [tool],
+        tool_choice: { type: 'tool', name: tool.name }
       })
     });
   } catch (e) {
@@ -37,15 +42,9 @@ async function callClaude(prompt, { maxTokens = 1500 } = {}) {
   }
 
   const data = await response.json();
-  const textBlock = (data.content || []).find(b => b.type === 'text');
-  if (!textBlock) throw new Error('A resposta da IA veio sem conteúdo de texto.');
-
-  const clean = textBlock.text.trim().replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
-  try {
-    return JSON.parse(clean);
-  } catch (e) {
-    throw new Error('A IA retornou um JSON inválido ou incompleto (talvez a reunião seja longa demais). Tente novamente.');
-  }
+  const toolBlock = (data.content || []).find(b => b.type === 'tool_use');
+  if (!toolBlock) throw new Error('A resposta da IA não retornou os dados esperados. Tente novamente.');
+  return toolBlock.input;
 }
 
 module.exports = { callClaude };

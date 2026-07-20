@@ -1,7 +1,7 @@
 const express = require('express');
 const store = require('../services/store');
 const { callClaude } = require('../services/anthropic');
-const { buildInsightsPrompt } = require('../services/prompts');
+const { buildInsightsPrompt, INSIGHTS_TOOL } = require('../services/prompts');
 
 const router = express.Router();
 
@@ -30,7 +30,7 @@ router.post('/', async (req, res, next) => {
       sentimento: m.analise?.sentimento?.geral || '',
       score: overallScore(m.analise)
     }));
-    const ins = await callClaude(buildInsightsPrompt(dados), { maxTokens: 1200 });
+    const ins = await callClaude(buildInsightsPrompt(dados), INSIGHTS_TOOL, { maxTokens: 1200 });
     res.json(ins);
   } catch (e) { next(e); }
 });

@@ -418,6 +418,17 @@ const ALERTS_DISPLAY_CAP = 6;
 function getVisibleAlerts(){
   return computeAlerts().filter(a=>!dismissedAlerts.has(a.id));
 }
+/** Reúne os riscos identificados pela IA em todas as reuniões, com referência de onde vieram. */
+const RISK_ORDER = {critico:0, alto:1, medio:2, baixo:3};
+function getAllRisks(){
+  const risks = [];
+  meetings.forEach(m=>{
+    (m.analise?.riscos||[]).forEach((r,idx)=>{
+      risks.push({ ...r, meetingId:m.id, meetingTitulo:m.titulo, meetingData:m.criadoEm, idx });
+    });
+  });
+  return risks.sort((a,b)=> (RISK_ORDER[a.prioridade]??9)-(RISK_ORDER[b.prioridade]??9) || b.meetingData-a.meetingData);
+}
 function computeThemeTimeline(){
   const map = {};
   meetings.forEach(m=>{
@@ -532,7 +543,7 @@ function stackedTempo(tempo){
    SIDEBAR
 ============================================================ */
 function renderSidebar(){
-  ['dashboard','insights','timeline','search','alerts'].forEach(v=>{
+  ['dashboard','insights','timeline','search','risks','alerts'].forEach(v=>{
     const el = document.getElementById('nav'+v.charAt(0).toUpperCase()+v.slice(1));
     if(el) el.classList.toggle('active', currentView===v);
   });
@@ -540,6 +551,11 @@ function renderSidebar(){
   const badgeEl = document.getElementById('alertBadge');
   badgeEl.style.display = alertCount>0 ? 'inline-block' : 'none';
   badgeEl.textContent = alertCount;
+
+  const riskCount = getAllRisks().filter(r=>r.prioridade==='alto' || r.prioridade==='critico').length;
+  const riskBadgeEl = document.getElementById('riskBadge');
+  riskBadgeEl.style.display = riskCount>0 ? 'inline-block' : 'none';
+  riskBadgeEl.textContent = riskCount;
 
   const list = document.getElementById('meetingList');
   const q = document.getElementById('searchInput').value.trim().toLowerCase();
@@ -582,6 +598,7 @@ function renderMain(){
   else if(currentView==='insights') html = insightsTemplate();
   else if(currentView==='timeline') html = timelineTemplate();
   else if(currentView==='search') html = searchTemplate();
+  else if(currentView==='risks') html = risksTemplate();
   else if(currentView==='alerts') html = alertsTemplate();
 
   main.innerHTML = `<div class="view-fade">${html}</div>`;
@@ -592,6 +609,7 @@ function renderMain(){
   else if(currentView==='insights') runInsights();
   else if(currentView==='timeline') bindTimeline();
   else if(currentView==='search') bindSearch();
+  else if(currentView==='risks') bindRisks();
   else if(currentView==='alerts') bindAlerts();
 }
 
@@ -970,6 +988,15 @@ function detailTemplate(m){
       ${(a.decisoes?.length) ? `<ul class="plain">${a.decisoes.map(d=>`<li>${escapeHtml(d)}</li>`).join('')}</ul>` : '<p class="hint">Nenhuma decisão explícita identificada.</p>'}
     </div>
 
+    ${(a.riscos?.length) ? `<div class="card">
+      ${cardTitle(`Riscos identificados (${a.riscos.length})`, 'flag')}
+      <div class="coach-list">${a.riscos.map(r=>{
+        const nivelTone = {critico:'red', alto:'red', medio:'orange', baixo:'blue'}[r.prioridade] || 'mute';
+        const nivelLabel = {critico:'Crítico', alto:'Alto', medio:'Médio', baixo:'Baixo'}[r.prioridade] || r.prioridade;
+        return `<div class="coach-item">${badge(nivelLabel, nivelTone)}<span>${escapeHtml(r.descricao)}</span></div>`;
+      }).join('')}</div>
+    </div>` : ''}
+
     <div class="card">
       <div class="card-title-row">
         ${cardTitle('Tarefas', 'checkTasks')}
@@ -1199,10 +1226,16 @@ function bindTimeline(){
    SEARCH — answer + confidence + sources with excerpts
 ============================================================ */
 function searchTemplate(){
+  const themes = meetings.length ? computeThemeTimeline() : [];
   return `
-  <div class="eyebrow">Pesquisa inteligente</div>
-  <div class="page-title">Pergunte sobre suas reuniões</div>
-  <div class="page-sub">Ex: "Quando falamos do Cliente XPTO?" · "Quem ficou responsável pelo Projeto Alpha?" · "Onde foi citado orçamento?"</div>
+  <div class="eyebrow">Memória corporativa</div>
+  <div class="page-title">O conhecimento acumulado da empresa</div>
+  <div class="page-sub">Pergunte qualquer coisa sobre o histórico de reuniões — decisões, responsáveis, clientes, projetos — e receba uma resposta com as fontes exatas. Ex: "Quando decidimos trocar de fornecedor?" · "Quem ficou responsável pelo Projeto Alpha?" · "O que foi decidido sobre orçamento?"</div>
+  ${themes.length ? `
+  <div class="card" style="margin-bottom:16px;">
+    ${cardTitle('Temas mais discutidos', 'repeat')}
+    <div class="theme-cloud">${themes.map(([tema,datas])=>`<span class="theme-chip" title="Apareceu em ${datas.length} reuniões">${escapeHtml(tema)} <b>${datas.length}</b></span>`).join('')}</div>
+  </div>` : ''}
   <div class="card">
     <div class="search-box">
       <input type="text" id="searchQuery" placeholder="Digite sua pergunta...">
@@ -1229,13 +1262,17 @@ async function runSearch(){
     if(!res.ok) throw new Error(r.error || 'Falha ao responder.');
     const confMap = {alta:'green', media:'orange', baixa:'red'};
     const confTone = confMap[r.confianca] || 'mute';
-    const fontes = (r.fontes||[]).map(f=>`<div class="source-card">
+    const fontes = (r.fontes||[]).map(f=>{
+      const meta = [f.data?fmtDate(f.data):'', f.participantes?.length?f.participantes.join(', '):''].filter(Boolean).join(' · ');
+      return `<div class="source-card">
         <div class="source-info">
           <div class="source-title">${escapeHtml(f.titulo)}</div>
+          ${meta?`<div class="hint" style="margin:1px 0 5px;">${escapeHtml(meta)}</div>`:''}
           <div class="source-trecho">${escapeHtml(f.trecho||'')}</div>
         </div>
         ${f.meetingId?`<button class="btn small" data-id="${f.meetingId}">${icon('doc',12)} Abrir reunião</button>`:''}
-      </div>`).join('');
+      </div>`;
+    }).join('');
     result.innerHTML = `
       <div class="search-answer">${escapeHtml(r.resposta)}</div>
       <div class="confidence-row">Confiança da resposta: ${badge(r.confianca||'—', confTone)}</div>
@@ -1245,6 +1282,46 @@ async function runSearch(){
   }catch(e){
     result.innerHTML = `<div class="error-box" style="margin-top:16px;">${icon('alert',15)} Não foi possível responder. ${escapeHtml(e.message||'Tente novamente.')}</div>`;
   }
+}
+
+/* ============================================================
+   RISKS — riscos que a IA identifica durante a análise de cada
+   reunião (atrasos, orçamento, fornecedores, clientes, equipe...)
+============================================================ */
+function risksTemplate(){
+  if(meetings.length===0){
+    return `<div class="eyebrow">Riscos</div><div class="page-title">Painel de riscos</div>
+    ${emptyStateHtml('alert', 'Nenhuma reunião analisada ainda', 'Os riscos identificados pela IA em cada reunião aparecem aqui automaticamente.')}`;
+  }
+  const risks = getAllRisks();
+  const nivelLabel = {critico:'Crítico', alto:'Alto', medio:'Médio', baixo:'Baixo'};
+  const nivelTone = {critico:'red', alto:'red', medio:'orange', baixo:'blue'};
+  if(!risks.length){
+    return `<div class="eyebrow">Riscos</div><div class="page-title">Painel de riscos</div>
+    <div class="page-sub">Riscos que a IA identifica automaticamente durante a análise de cada reunião — atrasos, orçamento, fornecedores, clientes insatisfeitos e outros sinais de alerta ao negócio.</div>
+    ${emptyStateHtml('check', 'Nenhum risco identificado', 'Tudo tranquilo por enquanto — a IA não encontrou sinais de risco nas reuniões analisadas.')}`;
+  }
+  const counts = risks.reduce((acc,r)=>{ acc[r.prioridade]=(acc[r.prioridade]||0)+1; return acc; }, {});
+  return `
+  <div class="eyebrow">Riscos</div>
+  <div class="page-title">Painel de riscos</div>
+  <div class="page-sub">Riscos identificados automaticamente pela IA em cada reunião — atrasos, orçamento, fornecedores, clientes insatisfeitos e outros sinais de alerta. ${risks.length} risco(s) em ${meetings.length} reunião(ões) analisada(s).</div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px;">
+    ${['critico','alto','medio','baixo'].filter(p=>counts[p]).map(p=>badge(`${counts[p]} ${nivelLabel[p].toLowerCase()}`, nivelTone[p])).join('')}
+  </div>
+  ${risks.map(r=>`
+    <div class="alert-card risk-card tone-${nivelTone[r.prioridade]||'blue'}" data-id="${r.meetingId}">
+      <span class="alert-icon">${icon('flag',15)}</span>
+      <div class="alert-body">
+        <div class="alert-top">${badge(nivelLabel[r.prioridade]||r.prioridade, nivelTone[r.prioridade]||'mute')}</div>
+        <div class="alert-text">${escapeHtml(r.descricao)}</div>
+        <div class="alert-suggestion">${icon('doc',13)}<span>${escapeHtml(r.meetingTitulo)} · ${fmtDate(r.meetingData)}</span></div>
+      </div>
+    </div>`).join('')}
+  `;
+}
+function bindRisks(){
+  document.querySelectorAll('.risk-card').forEach(el=>makeClickable(el, ()=>setView('detail', el.dataset.id)));
 }
 
 /* ============================================================
@@ -1330,6 +1407,7 @@ makeClickable(document.getElementById('navDashboard'), ()=>setView('dashboard'))
 makeClickable(document.getElementById('navInsights'), ()=>setView('insights'));
 makeClickable(document.getElementById('navTimeline'), ()=>setView('timeline'));
 makeClickable(document.getElementById('navSearch'), ()=>setView('search'));
+makeClickable(document.getElementById('navRisks'), ()=>setView('risks'));
 makeClickable(document.getElementById('navAlerts'), ()=>setView('alerts'));
 document.getElementById('searchInput').addEventListener('input', renderSidebar);
 

@@ -4,7 +4,7 @@ const store = require('../services/store');
 const jobs = require('../jobs');
 const { callClaude } = require('../services/anthropic');
 const { uploadAudio, requestTranscript, pollTranscript, buildTranscriptText } = require('../services/assemblyai');
-const { getKnownThemes, buildCorePrompt, buildIntelPrompt } = require('../services/prompts');
+const { getKnownThemes, buildCorePrompt, buildIntelPrompt, CORE_TOOL, INTEL_TOOL } = require('../services/prompts');
 
 const ALLOWED_AUDIO_EXT = /\.(mp3|wav|m4a|ogg|oga|webm|mp4|aac|flac|opus)$/i;
 const upload = multer({
@@ -56,7 +56,8 @@ async function runAnalysis({ titulo, participantesList, duracaoMin, transcricao 
       transcricao,
       temasConhecidos
     }),
-    { maxTokens: 2200 }
+    CORE_TOOL,
+    { maxTokens: 2500 }
   );
 
   const intel = await callClaude(
@@ -66,6 +67,7 @@ async function runAnalysis({ titulo, participantesList, duracaoMin, transcricao 
       tarefasCount: (core.tarefas || []).length,
       transcricao
     }),
+    INTEL_TOOL,
     { maxTokens: 1200 }
   );
 
@@ -75,6 +77,7 @@ async function runAnalysis({ titulo, participantesList, duracaoMin, transcricao 
   const analise = {
     ...core,
     tarefas: tarefasComStatus,
+    riscos: (core.riscos || []).map(r => ({ ...r, status: 'aberto' })),
     score: intel.score || null,
     tempo: intel.tempo || null,
     coach: intel.coach || [],
