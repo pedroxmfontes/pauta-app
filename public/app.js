@@ -46,7 +46,8 @@ const ICON_PATHS = {
   spark: '<path d="M12 3v3M12 18v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M3 12h3M18 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
   sentiment: '<circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/>',
   x: '<path d="M18 6L6 18M6 6l12 12"/>',
-  undo: '<path d="M3 7v6h6"/><path d="M3 13a9 9 0 106.7-8.7"/>'
+  undo: '<path d="M3 7v6h6"/><path d="M3 13a9 9 0 106.7-8.7"/>',
+  more: '<circle cx="12" cy="5" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.6" fill="currentColor" stroke="none"/>'
 };
 function icon(name, size=15){
   const p = ICON_PATHS[name] || ICON_PATHS.target;
@@ -694,12 +695,89 @@ function renderSidebar(){
       <span class="mc-num mono">${String(m.numero).padStart(3,'0')}</span>
       <div class="mc-meta">
         <div class="mc-title">${escapeHtml(m.titulo)}</div>
-        <div class="mc-date">${new Date(m.criadoEm).toLocaleDateString('pt-BR',{day:'2-digit', month:'short'})}</div>
+        <div class="mc-date">${new Date(m.criadoEm).toLocaleDateString('pt-BR',{day:'2-digit', month:'short'})} · ${escapeHtml(meetingFolder(m))}</div>
       </div>
       <span class="mc-score" style="background:${scoreColor(os)};" title="${os!=null? 'Score '+os : 'Sem score'}"></span>
+      <div class="mc-menu-wrap">
+        <button type="button" class="mc-menu-btn" data-menu-id="${m.id}" title="Mais opções">${icon('more',14)}</button>
+        <div class="mc-menu" data-menu-for="${m.id}">
+          <div class="mc-menu-item" data-action="edit" data-id="${m.id}">${icon('doc',14)} Editar</div>
+          <div class="mc-menu-item" data-action="move" data-id="${m.id}">${icon('inbox',14)} Mover de pasta</div>
+        </div>
+      </div>
     </div>`;
   }).join('');
-  list.querySelectorAll('.meeting-card').forEach(el=>makeClickable(el, ()=>setView('detail', el.dataset.id)));
+  list.querySelectorAll('.meeting-card').forEach(el=>{
+    makeClickable(el, e=>{ if(e.target.closest('.mc-menu-wrap')) return; setView('detail', el.dataset.id); });
+  });
+  list.querySelectorAll('.mc-menu-btn').forEach(btn=>{
+    btn.addEventListener('click', e=>{
+      e.stopPropagation();
+      const menu = list.querySelector(`.mc-menu[data-menu-for="${btn.dataset.menuId}"]`);
+      const wasOpen = menu.classList.contains('open');
+      closeAllMeetingMenus();
+      if(!wasOpen) menu.classList.add('open');
+    });
+  });
+  list.querySelectorAll('.mc-menu-item').forEach(item=>{
+    item.addEventListener('click', e=>{
+      e.stopPropagation();
+      closeAllMeetingMenus();
+      const id = item.dataset.id;
+      if(item.dataset.action==='edit'){
+        setView('detail', id);
+        detailEditMode = true;
+        renderMain();
+      } else if(item.dataset.action==='move'){
+        openMoveFolderModal(id);
+      }
+    });
+  });
+}
+function closeAllMeetingMenus(){
+  document.querySelectorAll('.mc-menu.open').forEach(el=>el.classList.remove('open'));
+}
+document.addEventListener('click', closeAllMeetingMenus);
+
+function openMoveFolderModal(meetingId){
+  const m = allMeetings.find(x=>x.id===meetingId);
+  if(!m) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal-card">
+    <div class="modal-title">Mover de pasta</div>
+    <p class="modal-text">Escolha a pasta de destino para "${escapeHtml(m.titulo)}".</p>
+    <input type="text" id="moveFolderInput" list="moveFolderList" value="${escapeHtml(meetingFolder(m))}" style="margin-bottom:6px;">
+    <datalist id="moveFolderList">${folderList().map(f=>`<option value="${escapeHtml(f)}">`).join('')}</datalist>
+    <div class="modal-actions">
+      <button class="btn" id="moveFolderCancel">Cancelar</button>
+      <button class="btn primary" id="moveFolderConfirm">Mover</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  requestAnimationFrame(()=>overlay.classList.add('show'));
+  function close(){ overlay.classList.remove('show'); setTimeout(()=>overlay.remove(),200); }
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) close(); });
+  overlay.querySelector('#moveFolderCancel').addEventListener('click', close);
+  overlay.querySelector('#moveFolderConfirm').addEventListener('click', async ()=>{
+    const novaPasta = document.getElementById('moveFolderInput').value.trim() || 'Geral';
+    try{
+      const res = await fetch(`/api/meetings/${meetingId}/pasta`, {
+        method:'PATCH', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ pasta: novaPasta })
+      });
+      const data = await readJsonSafe(res);
+      if(!res.ok) throw new Error(data.error || 'Falha ao mover a reunião.');
+      const idx = allMeetings.findIndex(x=>x.id===meetingId);
+      if(idx!==-1) allMeetings[idx] = data;
+      applyFolderFilter();
+      renderSidebar(); renderMain();
+      showToast('Reunião movida com sucesso.', 'success');
+      close();
+    }catch(e){
+      showToast('Não foi possível mover: ' + e.message, 'error');
+    }
+  });
 }
 
 /* ============================================================
@@ -906,11 +984,11 @@ function newMeetingTemplate(){
         <p class="hint">A análise entre reuniões só cruza reuniões da mesma pasta.</p>
       </div>
       <div>
-        <label for="fVisibilidade">Quem pode ver essa reunião</label>
+        <label for="fVisibilidade">Visibilidade</label>
         <select id="fVisibilidade">
-          <option value="dono" selected>Só eu e o dono</option>
-          <option value="todos">Todo mundo</option>
-          <option value="privado">Só eu</option>
+          <option value="dono" selected>Restrito à gestão</option>
+          <option value="todos">Toda a equipe</option>
+          <option value="privado">Confidencial</option>
         </select>
       </div>
     </div>

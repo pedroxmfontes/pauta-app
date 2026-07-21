@@ -261,6 +261,19 @@ router.patch('/:id/analise', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Move a reunião para outra pasta (usado no menu de atalho da lista).
+router.patch('/:id/pasta', async (req, res, next) => {
+  try {
+    const pasta = normalizePasta((req.body || {}).pasta);
+    const meeting = await store.updateMeeting(req.params.id, m => {
+      if (!canModifyMeeting(m, req.user)) throw Object.assign(new Error('Você não tem permissão para mover essa reunião.'), { status: 403 });
+      m.pasta = pasta;
+      return m;
+    });
+    res.json(meeting);
+  } catch (e) { next(e); }
+});
+
 router.delete('/:id', async (req, res, next) => {
   try {
     const meeting = await store.getMeetingById(req.params.id);
