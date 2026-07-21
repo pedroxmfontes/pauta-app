@@ -1,13 +1,28 @@
 /* ============================================================
    STATE
 ============================================================ */
+let allMeetings = [];
 let meetings = [];
+let currentFolder = '';
 let dismissedAlerts = new Set();
 let currentView = 'dashboard';
 let currentId = null;
 let currentMethod = 'audio';
 let detailEditMode = false;
 let currentUser = null;
+
+/* ============================================================
+   PASTAS — filtro global aplicado sobre allMeetings; toda a
+   interface (dashboard, insights, timeline, busca, riscos,
+   alertas) enxerga só o que está em "meetings" (já filtrado).
+============================================================ */
+function meetingFolder(m){ return m.pasta || 'Geral'; }
+function applyFolderFilter(){
+  meetings = currentFolder ? allMeetings.filter(m => meetingFolder(m) === currentFolder) : allMeetings.slice();
+}
+function folderList(){
+  return [...new Set(allMeetings.map(meetingFolder))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+}
 
 /* ============================================================
    ICON LIBRARY — single source of truth for every icon used
@@ -107,14 +122,15 @@ async function loadMeetings(){
       fetch('/api/meetings'),
       fetch('/api/dismissed-alerts')
     ]);
-    meetings = meetingsRes.ok ? await meetingsRes.json() : [];
+    allMeetings = meetingsRes.ok ? await meetingsRes.json() : [];
     const dismissedArr = dismissedRes.ok ? await dismissedRes.json() : [];
     dismissedAlerts = new Set(dismissedArr);
   }catch(e){
     console.error('Falha ao carregar dados do servidor', e);
     showToast('Não foi possível conectar ao servidor. Verifique se ele está rodando.', 'error');
-    meetings = []; dismissedAlerts = new Set();
+    allMeetings = []; dismissedAlerts = new Set();
   }
+  applyFolderFilter();
   renderSidebar();
   renderMain();
 }
@@ -637,7 +653,16 @@ function stackedTempo(tempo){
 /* ============================================================
    SIDEBAR
 ============================================================ */
+function renderFolderSelect(){
+  const sel = document.getElementById('folderSelect');
+  const folders = folderList();
+  sel.innerHTML = `<option value="">Todas as pastas</option>` +
+    folders.map(f=>`<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`).join('');
+  sel.value = currentFolder;
+}
+
 function renderSidebar(){
+  renderFolderSelect();
   ['dashboard','insights','timeline','search','risks','alerts','users'].forEach(v=>{
     const el = document.getElementById('nav'+v.charAt(0).toUpperCase()+v.slice(1));
     if(el) el.classList.toggle('active', currentView===v);
@@ -805,7 +830,8 @@ function bindDashboard(){
       const res = await fetch('/api/meetings/demo', { method:'POST' });
       const data = await readJsonSafe(res);
       if(!res.ok) throw new Error(data.error || 'Falha ao carregar o exemplo.');
-      meetings = data;
+      allMeetings = data;
+      applyFolderFilter();
       showToast('Dados de exemplo carregados.', 'success');
       renderSidebar(); renderMain();
     }catch(e){
@@ -822,7 +848,8 @@ function bindDashboard(){
       const res = await fetch('/api/meetings/demo', { method:'DELETE' });
       const data = await readJsonSafe(res);
       if(!res.ok) throw new Error(data.error || 'Falha ao remover o exemplo.');
-      meetings = meetings.filter(m=>!m.demo);
+      allMeetings = allMeetings.filter(m=>!m.demo);
+      applyFolderFilter();
       showToast('Dados de exemplo removidos.', 'success');
       renderSidebar(); renderMain();
     }catch(e){
@@ -868,6 +895,23 @@ function newMeetingTemplate(){
       <div>
         <label for="fDuracao">Duração (minutos, opcional)</label>
         <input type="number" id="fDuracao" min="1" placeholder="Detectada automaticamente do áudio">
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div>
+        <label for="fPasta">Pasta</label>
+        <input type="text" id="fPasta" list="fPastaList" placeholder="Ex: RH, Financeiro, Vendas" value="${escapeHtml(currentFolder || 'Geral')}">
+        <datalist id="fPastaList">${folderList().map(f=>`<option value="${escapeHtml(f)}">`).join('')}</datalist>
+        <p class="hint">A análise entre reuniões só cruza reuniões da mesma pasta.</p>
+      </div>
+      <div>
+        <label for="fVisibilidade">Quem pode ver essa reunião</label>
+        <select id="fVisibilidade">
+          <option value="dono" selected>Só eu e o dono</option>
+          <option value="todos">Todo mundo</option>
+          <option value="privado">Só eu</option>
+        </select>
       </div>
     </div>
 
@@ -984,6 +1028,8 @@ async function submitManualMeeting(){
   const participantes = document.getElementById('fParticipantes').value.trim();
   const duracaoMin = document.getElementById('fDuracao').value;
   const transcricao = document.getElementById('fTranscricao').value.trim();
+  const pasta = document.getElementById('fPasta').value.trim();
+  const visibilidade = document.getElementById('fVisibilidade').value;
   clearFormError();
   if(!titulo || !transcricao){ showFormError('Preencha o título e cole a transcrição antes de analisar.'); return; }
 
@@ -992,11 +1038,13 @@ async function submitManualMeeting(){
   try{
     const res = await fetch('/api/meetings/manual', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ titulo, participantes, duracaoMin, transcricao })
+      body: JSON.stringify({ titulo, participantes, duracaoMin, transcricao, pasta, visibilidade })
     });
     const data = await readJsonSafe(res);
     if(!res.ok) throw new Error(data.error || 'Falha ao analisar a reunião.');
-    meetings.push(data);
+    allMeetings.push(data);
+    currentFolder = meetingFolder(data);
+    applyFolderFilter();
     showToast('Reunião analisada com sucesso.', 'success');
     setView('detail', data.id);
   }catch(e){
@@ -1011,6 +1059,8 @@ async function submitAudioMeeting(){
   const participantes = document.getElementById('fParticipantes').value.trim();
   const duracaoMin = document.getElementById('fDuracao').value;
   const file = document.getElementById('fAudio').files[0];
+  const pasta = document.getElementById('fPasta').value.trim();
+  const visibilidade = document.getElementById('fVisibilidade').value;
   clearFormError();
   if(!titulo){ showFormError('Preencha o título da reunião.'); return; }
   if(!file){ showFormError('Selecione o arquivo de áudio da reunião.'); return; }
@@ -1024,6 +1074,8 @@ async function submitAudioMeeting(){
   fd.append('audio', file);
   fd.append('titulo', titulo);
   fd.append('participantes', participantes);
+  fd.append('pasta', pasta);
+  fd.append('visibilidade', visibilidade);
   if(duracaoMin) fd.append('duracaoMin', duracaoMin);
 
   try{
@@ -1053,7 +1105,9 @@ async function pollAudioJob(jobId){
     }
 
     if(job.status === 'concluido'){
-      meetings.push(job.meeting);
+      allMeetings.push(job.meeting);
+      currentFolder = meetingFolder(job.meeting);
+      applyFolderFilter();
       showToast('Reunião transcrita e analisada com sucesso.', 'success');
       setView('detail', job.meeting.id);
       return;
@@ -1082,7 +1136,7 @@ function detailTemplate(m){
     <div>
       <div class="mono" style="font-size:11px; color:var(--text-mute);">#${String(m.numero).padStart(3,'0')}</div>
       <div class="detail-title">${escapeHtml(m.titulo)}</div>
-      <div class="detail-meta">${fmtDate(m.criadoEm)}${m.duracaoMin?' · '+m.duracaoMin+' min':''}${m.participantes?.length ? ' · ' + escapeHtml(m.participantes.join(', ')) : ''}</div>
+      <div class="detail-meta">${fmtDate(m.criadoEm)}${m.duracaoMin?' · '+m.duracaoMin+' min':''}${m.participantes?.length ? ' · ' + escapeHtml(m.participantes.join(', ')) : ''} · ${escapeHtml(meetingFolder(m))}</div>
     </div>
     <div class="detail-actions">
       <span class="score-pill" style="background:${scoreColor(os)}22; color:${scoreColor(os)}; font-size:16px; padding:7px 15px;">${os ?? '—'}</span>
@@ -1244,7 +1298,8 @@ function bindDetailActions(m){
       const res = await fetch(`/api/meetings/${m.id}`, { method:'DELETE' });
       const data = await readJsonSafe(res);
       if(!res.ok) throw new Error(data.error || 'Falha ao excluir a reunião.');
-      meetings = meetings.filter(x=>x.id!==m.id);
+      allMeetings = allMeetings.filter(x=>x.id!==m.id);
+      applyFolderFilter();
       showToast('Reunião excluída.', 'success');
       setView('dashboard');
     }catch(e){
@@ -1786,6 +1841,11 @@ makeClickable(document.getElementById('navRisks'), ()=>setView('risks'));
 makeClickable(document.getElementById('navAlerts'), ()=>setView('alerts'));
 makeClickable(document.getElementById('navUsers'), ()=>setView('users'));
 document.getElementById('searchInput').addEventListener('input', renderSidebar);
+document.getElementById('folderSelect').addEventListener('change', e=>{
+  currentFolder = e.target.value;
+  applyFolderFilter();
+  setView('dashboard');
+});
 
 /* ============================================================
    LANDING — vitrine mostrada antes do painel, até o usuário

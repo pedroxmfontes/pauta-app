@@ -48,7 +48,16 @@ function parseSpeakers(transcricao, tarefas) {
   })).sort((a, b) => b.participacao_pct - a.participacao_pct);
 }
 
-async function runAnalysis({ titulo, participantesList, duracaoMin, transcricao, criadoPor }) {
+const VISIBILIDADES = ['todos', 'dono', 'privado'];
+function normalizePasta(pasta) {
+  const trimmed = (pasta || '').toString().trim();
+  return trimmed || 'Geral';
+}
+function normalizeVisibilidade(visibilidade) {
+  return VISIBILIDADES.includes(visibilidade) ? visibilidade : 'dono';
+}
+
+async function runAnalysis({ titulo, participantesList, duracaoMin, transcricao, criadoPor, pasta, visibilidade }) {
   const meetingsSoFar = await store.listMeetings();
   const temasConhecidos = getKnownThemes(meetingsSoFar);
 
@@ -99,7 +108,9 @@ async function runAnalysis({ titulo, participantesList, duracaoMin, transcricao,
     duracaoMin: Number.isFinite(duracaoMin) ? duracaoMin : null,
     transcricao,
     analise,
-    criadoPor
+    criadoPor,
+    pasta: normalizePasta(pasta),
+    visibilidade: normalizeVisibilidade(visibilidade)
   });
 }
 
@@ -127,7 +138,7 @@ router.delete('/demo', requireOwner, async (req, res, next) => {
 // Fluxo "colar transcrição" — roda de forma síncrona, igual ao app original.
 router.post('/manual', async (req, res, next) => {
   try {
-    const { titulo, participantes, duracaoMin, transcricao } = req.body || {};
+    const { titulo, participantes, duracaoMin, transcricao, pasta, visibilidade } = req.body || {};
     if (!titulo || !transcricao) {
       return res.status(400).json({ error: 'Título e transcrição são obrigatórios.' });
     }
@@ -137,7 +148,9 @@ router.post('/manual', async (req, res, next) => {
       participantesList,
       duracaoMin: parseInt(duracaoMin, 10),
       transcricao: String(transcricao).trim(),
-      criadoPor: req.user.id
+      criadoPor: req.user.id,
+      pasta,
+      visibilidade
     });
     res.json(meeting);
   } catch (e) { next(e); }
@@ -148,7 +161,7 @@ router.post('/manual', async (req, res, next) => {
 router.post('/audio', upload.single('audio'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo de áudio foi enviado.' });
-    const { titulo, participantes, duracaoMin } = req.body || {};
+    const { titulo, participantes, duracaoMin, pasta, visibilidade } = req.body || {};
     if (!titulo) return res.status(400).json({ error: 'O título da reunião é obrigatório.' });
 
     const participantesList = (participantes || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -180,7 +193,9 @@ router.post('/audio', upload.single('audio'), async (req, res, next) => {
           participantesList,
           duracaoMin: Number.isFinite(duracaoInformada) ? duracaoInformada : duracaoAuto,
           transcricao,
-          criadoPor
+          criadoPor,
+          pasta,
+          visibilidade
         });
 
         jobs.updateJob(jobId, { status: 'concluido', meeting });
