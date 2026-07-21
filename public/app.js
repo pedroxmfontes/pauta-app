@@ -18,6 +18,9 @@ let currentUser = null;
 ============================================================ */
 function meetingFolder(m){ return m.pasta || 'Geral'; }
 function applyFolderFilter(){
+  if(currentFolder && !allMeetings.some(m => meetingFolder(m) === currentFolder)){
+    currentFolder = ''; // a pasta selecionada não existe mais (ex: dados de exemplo recarregados) — volta a mostrar tudo
+  }
   meetings = currentFolder ? allMeetings.filter(m => meetingFolder(m) === currentFolder) : allMeetings.slice();
 }
 function folderList(){
