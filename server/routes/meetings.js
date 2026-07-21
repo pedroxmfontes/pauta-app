@@ -48,6 +48,8 @@ function parseSpeakers(transcricao, tarefas) {
   })).sort((a, b) => b.participacao_pct - a.participacao_pct);
 }
 
+// 'privado' foi descontinuado (o dono agora sempre vê tudo), mas segue aceito
+// aqui só pra não quebrar reuniões antigas que já tinham esse valor salvo.
 const VISIBILIDADES = ['todos', 'dono', 'privado'];
 function normalizePasta(pasta) {
   const trimmed = (pasta || '').toString().trim();

@@ -1,18 +1,15 @@
 /**
  * Cada reunião tem uma visibilidade escolhida por quem criou:
- *  - 'todos'   -> qualquer pessoa logada vê
- *  - 'dono'    -> só quem criou + o dono (padrão, preserva o comportamento anterior)
- *  - 'privado' -> só quem criou, nem o dono vê
- * Quem criou sempre vê a própria reunião, e reuniões de exemplo (demo) são sempre visíveis.
+ *  - 'todos' -> qualquer pessoa logada vê
+ *  - 'dono'  -> só quem criou + os proprietários (padrão)
+ * O dono sempre vê tudo, sem exceção — a visibilidade só restringe o que os
+ * outros funcionários enxergam entre si. Quem criou sempre vê a própria reunião,
+ * e reuniões de exemplo (demo) são sempre visíveis.
  */
 function visibleMeetings(allMeetings, user) {
   if (!user) return [];
-  return allMeetings.filter(m => {
-    if (m.demo) return true;
-    if (m.criadoPor === user.id) return true;
-    if (user.role === 'dono') return m.visibilidade !== 'privado';
-    return m.visibilidade === 'todos';
-  });
+  if (user.role === 'dono') return allMeetings;
+  return allMeetings.filter(m => m.demo || m.criadoPor === user.id || m.visibilidade === 'todos');
 }
 
 /** Dono pode editar/apagar qualquer reunião. Funcionário só as que ele mesmo criou. */

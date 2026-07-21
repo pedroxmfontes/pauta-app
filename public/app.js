@@ -986,9 +986,8 @@ function newMeetingTemplate(){
       <div>
         <label for="fVisibilidade">Visibilidade</label>
         <select id="fVisibilidade">
-          <option value="dono" selected>Restrito à gestão</option>
+          <option value="dono" selected>Restrito à gestão (proprietários)</option>
           <option value="todos">Toda a equipe</option>
-          <option value="privado">Confidencial</option>
         </select>
       </div>
     </div>
