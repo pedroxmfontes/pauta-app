@@ -1740,7 +1740,7 @@ function usersTemplate(){
       <div class="form-row">
         <div>
           <label for="newUserNome">Nome</label>
-          <input type="text" id="newUserNome" placeholder="Ex: Ana Souza" required>
+          <input type="text" id="newUserNome" placeholder="Ex: Larissa Martins" required>
         </div>
         <div>
           <label for="newUserRole">Tipo de conta</label>
