@@ -51,6 +51,12 @@ async function listMeetings() {
   return rows.map(r => r.data);
 }
 
+async function getMeetingById(id) {
+  await ready;
+  const { rows } = await pool.query('SELECT data FROM meetings WHERE id = $1', [id]);
+  return rows.length ? rows[0].data : null;
+}
+
 function addMeeting(partial) {
   return (async () => {
     await ready;
@@ -197,6 +203,7 @@ function createUser({ username, passwordHash, nome, role }) {
 
 module.exports = {
   listMeetings,
+  getMeetingById,
   addMeeting,
   updateMeeting,
   deleteMeeting,

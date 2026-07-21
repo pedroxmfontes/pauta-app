@@ -34,7 +34,7 @@ app.use((err, req, res, next) => {
     return res.status(400).json({ error: 'Esse arquivo não parece ser um áudio válido. Envie um arquivo .mp3, .wav, .m4a, .mp4, .ogg ou .webm.' });
   }
   console.error(err);
-  res.status(500).json({ error: err.message || 'Erro interno do servidor.' });
+  res.status(err.status || 500).json({ error: err.message || 'Erro interno do servidor.' });
 });
 
 const PORT = process.env.PORT || 3000;

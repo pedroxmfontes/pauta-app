@@ -2,6 +2,7 @@ const express = require('express');
 const store = require('../services/store');
 const { callClaude } = require('../services/anthropic');
 const { buildInsightsBlock, INSIGHTS_TOOL } = require('../services/prompts');
+const { visibleMeetings } = require('../services/permissions');
 
 const router = express.Router();
 
@@ -14,7 +15,7 @@ function overallScore(a) {
 
 router.post('/', async (req, res, next) => {
   try {
-    const meetings = await store.listMeetings();
+    const meetings = visibleMeetings(await store.listMeetings(), req.user);
     if (meetings.length < 2) {
       return res.json({ tooFew: true });
     }

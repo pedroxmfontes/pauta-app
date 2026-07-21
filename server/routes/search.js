@@ -2,6 +2,7 @@ const express = require('express');
 const store = require('../services/store');
 const { callClaude } = require('../services/anthropic');
 const { buildSearchDadosBlock, buildSearchQuestionBlock, SEARCH_TOOL } = require('../services/prompts');
+const { visibleMeetings } = require('../services/permissions');
 
 const router = express.Router();
 
@@ -11,7 +12,7 @@ router.post('/', async (req, res, next) => {
     if (!query || !String(query).trim()) {
       return res.status(400).json({ error: 'Digite uma pergunta.' });
     }
-    const meetings = await store.listMeetings();
+    const meetings = visibleMeetings(await store.listMeetings(), req.user);
     if (meetings.length === 0) {
       return res.status(400).json({ error: 'Nenhuma reunião analisada ainda.' });
     }

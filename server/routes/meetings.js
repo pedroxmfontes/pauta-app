@@ -6,6 +6,8 @@ const { callClaude } = require('../services/anthropic');
 const { uploadAudio, requestTranscript, pollTranscript, buildTranscriptText } = require('../services/assemblyai');
 const { getKnownThemes, buildTranscriptBlock, buildCoreInstructions, buildIntelInstructions, CORE_TOOL, INTEL_TOOL } = require('../services/prompts');
 const { buildDemoMeetings } = require('../services/demoData');
+const { visibleMeetings, canModifyMeeting } = require('../services/permissions');
+const { requireOwner } = require('../middleware/auth');
 
 const ALLOWED_AUDIO_EXT = /\.(mp3|wav|m4a|ogg|oga|webm|mp4|aac|flac|opus)$/i;
 const upload = multer({
@@ -46,7 +48,7 @@ function parseSpeakers(transcricao, tarefas) {
   })).sort((a, b) => b.participacao_pct - a.participacao_pct);
 }
 
-async function runAnalysis({ titulo, participantesList, duracaoMin, transcricao }) {
+async function runAnalysis({ titulo, participantesList, duracaoMin, transcricao, criadoPor }) {
   const meetingsSoFar = await store.listMeetings();
   const temasConhecidos = getKnownThemes(meetingsSoFar);
 
@@ -96,24 +98,26 @@ async function runAnalysis({ titulo, participantesList, duracaoMin, transcricao 
     participantes: participantesList,
     duracaoMin: Number.isFinite(duracaoMin) ? duracaoMin : null,
     transcricao,
-    analise
+    analise,
+    criadoPor
   });
 }
 
 router.get('/', async (req, res, next) => {
   try {
-    res.json(await store.listMeetings());
+    res.json(visibleMeetings(await store.listMeetings(), req.user));
   } catch (e) { next(e); }
 });
 
 // Dados de demonstração: já vêm totalmente analisados, não chamam a IA (custo zero).
-router.post('/demo', async (req, res, next) => {
+// Só o dono pode criar/remover, já que afeta o que todo mundo vê.
+router.post('/demo', requireOwner, async (req, res, next) => {
   try {
     await store.seedDemoMeetings(buildDemoMeetings());
-    res.json(await store.listMeetings());
+    res.json(visibleMeetings(await store.listMeetings(), req.user));
   } catch (e) { next(e); }
 });
-router.delete('/demo', async (req, res, next) => {
+router.delete('/demo', requireOwner, async (req, res, next) => {
   try {
     const removidas = await store.clearDemoMeetings();
     res.json({ ok: true, removidas });
@@ -132,7 +136,8 @@ router.post('/manual', async (req, res, next) => {
       titulo: String(titulo).trim(),
       participantesList,
       duracaoMin: parseInt(duracaoMin, 10),
-      transcricao: String(transcricao).trim()
+      transcricao: String(transcricao).trim(),
+      criadoPor: req.user.id
     });
     res.json(meeting);
   } catch (e) { next(e); }
@@ -148,6 +153,7 @@ router.post('/audio', upload.single('audio'), async (req, res, next) => {
 
     const participantesList = (participantes || '').split(',').map(s => s.trim()).filter(Boolean);
     const duracaoInformada = parseInt(duracaoMin, 10);
+    const criadoPor = req.user.id;
     const jobId = jobs.createJob();
     res.json({ jobId });
 
@@ -173,7 +179,8 @@ router.post('/audio', upload.single('audio'), async (req, res, next) => {
           titulo: String(titulo).trim(),
           participantesList,
           duracaoMin: Number.isFinite(duracaoInformada) ? duracaoInformada : duracaoAuto,
-          transcricao
+          transcricao,
+          criadoPor
         });
 
         jobs.updateJob(jobId, { status: 'concluido', meeting });
@@ -196,6 +203,7 @@ router.patch('/:id/tasks/:idx', async (req, res, next) => {
     const idx = parseInt(req.params.idx, 10);
     const concluida = !!(req.body || {}).concluida;
     const meeting = await store.updateMeeting(req.params.id, m => {
+      if (!canModifyMeeting(m, req.user)) throw Object.assign(new Error('Você não tem permissão para editar essa reunião.'), { status: 403 });
       if (!m.analise?.tarefas?.[idx]) throw new Error('Tarefa não encontrada.');
       m.analise.tarefas[idx].concluida = concluida;
       return m;
@@ -209,6 +217,7 @@ router.patch('/:id/analise', async (req, res, next) => {
   try {
     const patch = req.body || {};
     const meeting = await store.updateMeeting(req.params.id, m => {
+      if (!canModifyMeeting(m, req.user)) throw Object.assign(new Error('Você não tem permissão para editar essa reunião.'), { status: 403 });
       if (typeof patch.resumo_executivo === 'string') m.analise.resumo_executivo = patch.resumo_executivo;
       if (Array.isArray(patch.decisoes)) m.analise.decisoes = patch.decisoes.filter(d => typeof d === 'string' && d.trim()).map(d => d.trim());
       if (Array.isArray(patch.riscos)) {
@@ -239,6 +248,11 @@ router.patch('/:id/analise', async (req, res, next) => {
 
 router.delete('/:id', async (req, res, next) => {
   try {
+    const meeting = await store.getMeetingById(req.params.id);
+    if (!meeting) return res.status(404).json({ error: 'Reunião não encontrada.' });
+    if (!canModifyMeeting(meeting, req.user)) {
+      return res.status(403).json({ error: 'Você não tem permissão para apagar essa reunião.' });
+    }
     await store.deleteMeeting(req.params.id);
     res.json({ ok: true });
   } catch (e) { next(e); }
