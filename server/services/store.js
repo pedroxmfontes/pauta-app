@@ -1,119 +1,144 @@
-const fs = require('fs/promises');
-const path = require('path');
+const { Pool } = require('pg');
 const { randomUUID } = require('crypto');
 
-const DATA_DIR = path.join(__dirname, '..', '..', 'data');
-const DB_FILE = path.join(DATA_DIR, 'db.json');
-
-// Fila simples para serializar leitura+escrita e evitar corromper o arquivo
-// quando duas operações tentam salvar ao mesmo tempo.
-let writeQueue = Promise.resolve();
-function serialize(task) {
-  const run = writeQueue.then(task, task);
-  writeQueue = run.then(() => {}, () => {});
-  return run;
-}
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('localhost')
+    ? { rejectUnauthorized: false }
+    : false
+});
 
 async function ensureDb() {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  try {
-    await fs.access(DB_FILE);
-  } catch {
-    await fs.writeFile(DB_FILE, JSON.stringify({ meetings: [], dismissedAlerts: [] }, null, 2), 'utf-8');
-  }
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS meetings (
+      id TEXT PRIMARY KEY,
+      numero INTEGER NOT NULL,
+      criado_em BIGINT NOT NULL,
+      demo BOOLEAN NOT NULL DEFAULT FALSE,
+      data JSONB NOT NULL
+    )
+  `);
+  await pool.query(`CREATE SEQUENCE IF NOT EXISTS meetings_numero_seq`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS app_state (
+      key TEXT PRIMARY KEY,
+      value JSONB NOT NULL
+    )
+  `);
+  await pool.query(
+    `INSERT INTO app_state (key, value) VALUES ('dismissedAlerts', '[]'::jsonb) ON CONFLICT (key) DO NOTHING`
+  );
 }
 
-async function readDb() {
-  await ensureDb();
-  const raw = await fs.readFile(DB_FILE, 'utf-8');
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed.meetings)) parsed.meetings = [];
-    if (!Array.isArray(parsed.dismissedAlerts)) parsed.dismissedAlerts = [];
-    return parsed;
-  } catch {
-    return { meetings: [], dismissedAlerts: [] };
-  }
-}
-
-async function writeDb(db) {
-  await fs.writeFile(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
-}
+// Roda uma vez no carregamento do módulo; toda função abaixo espera essa promise
+// antes de consultar, então nenhuma query roda antes das tabelas existirem.
+const ready = ensureDb();
+ready.catch(() => {}); // evita warning de "unhandled rejection" — o erro real aparece pra quem usar as funções abaixo
 
 async function listMeetings() {
-  const db = await readDb();
-  return db.meetings;
+  await ready;
+  const { rows } = await pool.query('SELECT data FROM meetings ORDER BY numero ASC');
+  return rows.map(r => r.data);
 }
 
 function addMeeting(partial) {
-  return serialize(async () => {
-    const db = await readDb();
-    const numero = db.meetings.length ? Math.max(...db.meetings.map(m => m.numero || 0)) + 1 : 1;
-    const meeting = { id: randomUUID(), numero, criadoEm: Date.now(), ...partial };
-    db.meetings.push(meeting);
-    await writeDb(db);
+  return (async () => {
+    await ready;
+    const { rows } = await pool.query(`SELECT nextval('meetings_numero_seq') AS n`);
+    const meeting = { id: randomUUID(), numero: Number(rows[0].n), criadoEm: Date.now(), ...partial };
+    await pool.query(
+      'INSERT INTO meetings (id, numero, criado_em, demo, data) VALUES ($1,$2,$3,$4,$5)',
+      [meeting.id, meeting.numero, meeting.criadoEm, !!meeting.demo, meeting]
+    );
     return meeting;
-  });
+  })();
 }
 
 function updateMeeting(id, updater) {
-  return serialize(async () => {
-    const db = await readDb();
-    const idx = db.meetings.findIndex(m => m.id === id);
-    if (idx === -1) throw new Error('Reunião não encontrada.');
-    db.meetings[idx] = updater(db.meetings[idx]);
-    await writeDb(db);
-    return db.meetings[idx];
-  });
+  return (async () => {
+    await ready;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query('SELECT data FROM meetings WHERE id = $1 FOR UPDATE', [id]);
+      if (!rows.length) throw new Error('Reunião não encontrada.');
+      const updated = updater(rows[0].data);
+      await client.query(
+        'UPDATE meetings SET numero=$1, criado_em=$2, demo=$3, data=$4 WHERE id=$5',
+        [updated.numero, updated.criadoEm, !!updated.demo, updated, id]
+      );
+      await client.query('COMMIT');
+      return updated;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  })();
 }
 
 function deleteMeeting(id) {
-  return serialize(async () => {
-    const db = await readDb();
-    const before = db.meetings.length;
-    db.meetings = db.meetings.filter(m => m.id !== id);
-    if (db.meetings.length === before) throw new Error('Reunião não encontrada.');
-    await writeDb(db);
-  });
+  return (async () => {
+    await ready;
+    const { rowCount } = await pool.query('DELETE FROM meetings WHERE id = $1', [id]);
+    if (!rowCount) throw new Error('Reunião não encontrada.');
+  })();
 }
 
 /** Insere reuniões de demonstração já analisadas (sem passar pela IA), marcadas com demo:true. */
 function seedDemoMeetings(demoMeetings) {
-  return serialize(async () => {
-    const db = await readDb();
-    let nextNumero = db.meetings.length ? Math.max(...db.meetings.map(m => m.numero || 0)) + 1 : 1;
-    const inserted = demoMeetings.map(partial => {
-      const meeting = { id: randomUUID(), numero: nextNumero++, demo: true, ...partial };
-      db.meetings.push(meeting);
-      return meeting;
-    });
-    await writeDb(db);
-    return inserted;
-  });
+  return (async () => {
+    await ready;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const inserted = [];
+      for (const partial of demoMeetings) {
+        const { rows } = await client.query(`SELECT nextval('meetings_numero_seq') AS n`);
+        const meeting = { id: randomUUID(), numero: Number(rows[0].n), demo: true, ...partial };
+        await client.query(
+          'INSERT INTO meetings (id, numero, criado_em, demo, data) VALUES ($1,$2,$3,$4,$5)',
+          [meeting.id, meeting.numero, meeting.criadoEm, true, meeting]
+        );
+        inserted.push(meeting);
+      }
+      await client.query('COMMIT');
+      return inserted;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  })();
 }
 
 /** Remove só as reuniões de demonstração (demo:true), preservando reuniões reais. */
 function clearDemoMeetings() {
-  return serialize(async () => {
-    const db = await readDb();
-    const before = db.meetings.length;
-    db.meetings = db.meetings.filter(m => !m.demo);
-    await writeDb(db);
-    return before - db.meetings.length;
-  });
+  return (async () => {
+    await ready;
+    const { rowCount } = await pool.query('DELETE FROM meetings WHERE demo = true');
+    return rowCount;
+  })();
 }
 
 async function getDismissedAlerts() {
-  const db = await readDb();
-  return db.dismissedAlerts;
+  await ready;
+  const { rows } = await pool.query("SELECT value FROM app_state WHERE key = 'dismissedAlerts'");
+  return rows.length ? rows[0].value : [];
 }
 
 function setDismissedAlerts(ids) {
-  return serialize(async () => {
-    const db = await readDb();
-    db.dismissedAlerts = Array.isArray(ids) ? ids : [];
-    await writeDb(db);
-  });
+  return (async () => {
+    await ready;
+    const value = Array.isArray(ids) ? ids : [];
+    await pool.query(
+      `INSERT INTO app_state (key, value) VALUES ('dismissedAlerts', $1::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value = $1::jsonb`,
+      [JSON.stringify(value)]
+    );
+  })();
 }
 
 module.exports = {

@@ -38,4 +38,7 @@ app.listen(PORT, () => {
   if (!process.env.ASSEMBLYAI_API_KEY) {
     console.warn('AVISO: ASSEMBLYAI_API_KEY não configurada — o upload de áudio vai falhar até você preencher o .env.');
   }
+  if (!process.env.DATABASE_URL) {
+    console.warn('AVISO: DATABASE_URL não configurada — nenhuma reunião vai poder ser salva até você preencher o .env.');
+  }
 });
