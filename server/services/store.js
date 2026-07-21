@@ -28,6 +28,16 @@ async function ensureDb() {
   await pool.query(
     `INSERT INTO app_state (key, value) VALUES ('dismissedAlerts', '[]'::jsonb) ON CONFLICT (key) DO NOTHING`
   );
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      nome TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('dono','funcionario')),
+      criado_em BIGINT NOT NULL
+    )
+  `);
 }
 
 // Roda uma vez no carregamento do módulo; toda função abaixo espera essa promise
@@ -141,6 +151,50 @@ function setDismissedAlerts(ids) {
   })();
 }
 
+async function countUsers() {
+  await ready;
+  const { rows } = await pool.query('SELECT COUNT(*)::int AS c FROM users');
+  return rows[0].c;
+}
+
+async function getUserByUsername(username) {
+  await ready;
+  const { rows } = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+  return rows[0] || null;
+}
+
+async function getUserById(id) {
+  await ready;
+  const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+  return rows[0] || null;
+}
+
+async function listUsers() {
+  await ready;
+  const { rows } = await pool.query(
+    'SELECT id, username, nome, role, criado_em AS "criadoEm" FROM users ORDER BY criado_em ASC'
+  );
+  return rows;
+}
+
+function createUser({ username, passwordHash, nome, role }) {
+  return (async () => {
+    await ready;
+    const id = randomUUID();
+    const criadoEm = Date.now();
+    try {
+      await pool.query(
+        'INSERT INTO users (id, username, password_hash, nome, role, criado_em) VALUES ($1,$2,$3,$4,$5,$6)',
+        [id, username, passwordHash, nome || username, role, criadoEm]
+      );
+    } catch (err) {
+      if (err.code === '23505') throw new Error('Já existe um usuário com esse nome de usuário.');
+      throw err;
+    }
+    return { id, username, nome: nome || username, role, criadoEm };
+  })();
+}
+
 module.exports = {
   listMeetings,
   addMeeting,
@@ -149,5 +203,10 @@ module.exports = {
   seedDemoMeetings,
   clearDemoMeetings,
   getDismissedAlerts,
-  setDismissedAlerts
+  setDismissedAlerts,
+  countUsers,
+  getUserByUsername,
+  getUserById,
+  listUsers,
+  createUser
 };

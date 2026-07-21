@@ -7,6 +7,7 @@ let currentView = 'dashboard';
 let currentId = null;
 let currentMethod = 'audio';
 let detailEditMode = false;
+let currentUser = null;
 
 /* ============================================================
    ICON LIBRARY — single source of truth for every icon used
@@ -637,7 +638,7 @@ function stackedTempo(tempo){
    SIDEBAR
 ============================================================ */
 function renderSidebar(){
-  ['dashboard','insights','timeline','search','risks','alerts'].forEach(v=>{
+  ['dashboard','insights','timeline','search','risks','alerts','users'].forEach(v=>{
     const el = document.getElementById('nav'+v.charAt(0).toUpperCase()+v.slice(1));
     if(el) el.classList.toggle('active', currentView===v);
   });
@@ -694,6 +695,7 @@ function renderMain(){
   else if(currentView==='search') html = searchTemplate();
   else if(currentView==='risks') html = risksTemplate();
   else if(currentView==='alerts') html = alertsTemplate();
+  else if(currentView==='users') html = usersTemplate();
 
   main.innerHTML = `<div class="view-fade">${html}</div>`;
 
@@ -705,6 +707,7 @@ function renderMain(){
   else if(currentView==='search') bindSearch();
   else if(currentView==='risks') bindRisks();
   else if(currentView==='alerts') bindAlerts();
+  else if(currentView==='users') bindUsers();
 }
 
 /* ============================================================
@@ -1586,6 +1589,192 @@ function bindAlerts(){
 }
 
 /* ============================================================
+   USUÁRIOS — só o dono vê e acessa essa área (o servidor também
+   bloqueia via requireOwner, isso aqui é só a interface).
+============================================================ */
+function usersTemplate(){
+  return `
+  <div class="eyebrow">Administração</div>
+  <div class="page-title">Usuários</div>
+  <div class="page-sub">Crie contas de acesso para o dono ou para funcionários. Cada pessoa entra com seu próprio usuário e senha.</div>
+
+  <div class="form-card" style="margin-bottom:24px;">
+    <div class="card-title">Nova conta</div>
+    <div id="userFormError" class="error-box" style="display:none;"></div>
+    <form id="newUserForm">
+      <div class="form-row">
+        <div>
+          <label for="newUserNome">Nome</label>
+          <input type="text" id="newUserNome" placeholder="Ex: Ana Souza" required>
+        </div>
+        <div>
+          <label for="newUserRole">Tipo de conta</label>
+          <select id="newUserRole">
+            <option value="funcionario">Funcionário</option>
+            <option value="dono">Dono</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div>
+          <label for="newUserUsername">Usuário (login)</label>
+          <input type="text" id="newUserUsername" placeholder="Ex: ana.souza" required>
+        </div>
+        <div>
+          <label for="newUserPassword">Senha</label>
+          <input type="password" id="newUserPassword" placeholder="Mínimo 6 caracteres" required>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn primary" id="newUserSubmitBtn">Criar conta</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Contas existentes</div>
+    <div id="usersListArea"><div class="skeleton skel-line" style="width:60%;"></div></div>
+  </div>`;
+}
+
+function bindUsers(){
+  const form = document.getElementById('newUserForm');
+  const errorEl = document.getElementById('userFormError');
+  form.addEventListener('submit', async e=>{
+    e.preventDefault();
+    errorEl.style.display = 'none';
+    const nome = document.getElementById('newUserNome').value.trim();
+    const role = document.getElementById('newUserRole').value;
+    const username = document.getElementById('newUserUsername').value.trim();
+    const password = document.getElementById('newUserPassword').value;
+    const btn = document.getElementById('newUserSubmitBtn');
+    btn.disabled = true;
+    try{
+      const res = await fetch('/api/auth/users', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ nome, role, username, password })
+      });
+      const data = await readJsonSafe(res);
+      if(!res.ok){
+        errorEl.textContent = data.error || 'Não foi possível criar a conta.';
+        errorEl.style.display = 'block';
+        return;
+      }
+      showToast('Conta criada com sucesso.', 'success');
+      form.reset();
+      loadUsersList();
+    }catch(err){
+      errorEl.textContent = 'Não foi possível conectar ao servidor.';
+      errorEl.style.display = 'block';
+    }finally{
+      btn.disabled = false;
+    }
+  });
+  loadUsersList();
+}
+
+async function loadUsersList(){
+  const area = document.getElementById('usersListArea');
+  try{
+    const res = await fetch('/api/auth/users');
+    const users = await readJsonSafe(res);
+    if(!res.ok || !Array.isArray(users)){
+      area.innerHTML = '<p class="hint">Não foi possível carregar as contas.</p>';
+      return;
+    }
+    if(!users.length){
+      area.innerHTML = '<p class="hint">Nenhuma conta cadastrada ainda.</p>';
+      return;
+    }
+    area.innerHTML = `<table class="tasks"><thead><tr><th>Nome</th><th>Usuário</th><th>Tipo</th><th>Criado em</th></tr></thead><tbody>
+      ${users.map(u=>`<tr>
+        <td>${escapeHtml(u.nome)}</td>
+        <td class="mono">${escapeHtml(u.username)}</td>
+        <td><span class="badge ${u.role==='dono'?'blue':'mute'}">${u.role==='dono'?'Dono':'Funcionário'}</span></td>
+        <td class="mono">${fmtDate(u.criadoEm)}</td>
+      </tr>`).join('')}
+    </tbody></table>`;
+  }catch(err){
+    area.innerHTML = '<p class="hint">Não foi possível carregar as contas.</p>';
+  }
+}
+
+/* ============================================================
+   LOGIN — tela exibida enquanto não há sessão válida.
+============================================================ */
+function renderUserBar(){
+  if(!currentUser) return;
+  document.getElementById('userBarName').textContent = currentUser.nome || currentUser.username;
+  document.getElementById('userBarRole').textContent = currentUser.role === 'dono' ? 'Dono' : 'Funcionário';
+  const navUsers = document.getElementById('navUsers');
+  if(navUsers) navUsers.style.display = currentUser.role === 'dono' ? '' : 'none';
+}
+
+async function checkAuth(){
+  try{
+    const res = await fetch('/api/auth/me');
+    if(!res.ok) return false;
+    currentUser = await res.json();
+    return true;
+  }catch(e){ return false; }
+}
+
+function bindAuthForm(){
+  const form = document.getElementById('authForm');
+  const errorEl = document.getElementById('authError');
+  form.addEventListener('submit', async e=>{
+    e.preventDefault();
+    errorEl.style.display = 'none';
+    const username = document.getElementById('authUsername').value.trim();
+    const password = document.getElementById('authPassword').value;
+    const btn = document.getElementById('authSubmitBtn');
+    btn.disabled = true;
+    try{
+      const res = await fetch('/api/auth/login', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ username, password })
+      });
+      const data = await readJsonSafe(res);
+      if(!res.ok){
+        errorEl.textContent = data.error || 'Não foi possível entrar.';
+        errorEl.style.display = 'block';
+        return;
+      }
+      currentUser = data;
+      document.getElementById('authOverlay').style.display = 'none';
+      document.querySelector('.app').style.display = '';
+      renderUserBar();
+      renderMain();
+      loadMeetings();
+      initLanding();
+    }catch(err){
+      errorEl.textContent = 'Não foi possível conectar ao servidor.';
+      errorEl.style.display = 'block';
+    }finally{
+      btn.disabled = false;
+    }
+  });
+}
+
+async function boot(){
+  bindAuthForm();
+  document.getElementById('btnLogout').addEventListener('click', async ()=>{
+    await fetch('/api/auth/logout', { method:'POST' });
+    location.reload();
+  });
+  const authed = await checkAuth();
+  if(!authed){
+    document.getElementById('authOverlay').style.display = 'flex';
+    return;
+  }
+  document.querySelector('.app').style.display = '';
+  renderUserBar();
+  renderMain();
+  loadMeetings();
+  initLanding();
+}
+
+/* ============================================================
    NAV BINDINGS
 ============================================================ */
 document.getElementById('btnNew').addEventListener('click', ()=>setView('new'));
@@ -1595,6 +1784,7 @@ makeClickable(document.getElementById('navTimeline'), ()=>setView('timeline'));
 makeClickable(document.getElementById('navSearch'), ()=>setView('search'));
 makeClickable(document.getElementById('navRisks'), ()=>setView('risks'));
 makeClickable(document.getElementById('navAlerts'), ()=>setView('alerts'));
+makeClickable(document.getElementById('navUsers'), ()=>setView('users'));
 document.getElementById('searchInput').addEventListener('input', renderSidebar);
 
 /* ============================================================
@@ -1624,6 +1814,4 @@ function initLanding(){
   });
 }
 
-renderMain();
-loadMeetings();
-initLanding();
+boot();
