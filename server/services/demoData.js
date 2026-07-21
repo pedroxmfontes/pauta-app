@@ -12,6 +12,7 @@ function buildDemoMeetings() {
   return [
     {
       titulo: '[Exemplo] Kickoff — Expansão para o mercado corporativo',
+      pasta: 'Vendas',
       participantes: ['Camila', 'Bruno', 'Rafael', 'Juliana'],
       duracaoMin: 38,
       criadoEm: now - 21 * DAY,
@@ -53,6 +54,7 @@ Juliana: Boa observação, vamos monitorar isso de perto nas próximas reuniões
     },
     {
       titulo: '[Exemplo] Acompanhamento semanal — Vendas e Onboarding',
+      pasta: 'Vendas',
       participantes: ['Camila', 'Bruno', 'Rafael'],
       duracaoMin: 30,
       criadoEm: now - 14 * DAY,
@@ -94,6 +96,7 @@ Rafael: Eu assumo a integração da Vortex Log, você foca no restante.`,
     },
     {
       titulo: '[Exemplo] Acompanhamento semanal — Vendas e Onboarding',
+      pasta: 'Vendas',
       participantes: ['Camila', 'Bruno', 'Rafael', 'Juliana'],
       duracaoMin: 33,
       criadoEm: now - 7 * DAY,
@@ -135,6 +138,7 @@ Camila: Vamos definir isso até a próxima reunião, sem falta.`,
     },
     {
       titulo: '[Exemplo] Revisão mensal de resultados',
+      pasta: 'Vendas',
       participantes: ['Camila', 'Bruno', 'Rafael', 'Juliana'],
       duracaoMin: 42,
       criadoEm: now - 1 * DAY,
@@ -167,6 +171,79 @@ Rafael: Combinado, e já podemos planejar a próxima leva de contas-alvo pro mê
           { nome: 'Rafael', participacao_pct: 27, turnos: 3, tarefas_criadas: 1 },
           { nome: 'Bruno', participacao_pct: 23, turnos: 2, tarefas_criadas: 0 },
           { nome: 'Juliana', participacao_pct: 21, turnos: 2, tarefas_criadas: 0 }
+        ]
+      }
+    },
+    {
+      titulo: '[Exemplo] Revisão orçamentária — Fechamento de fevereiro',
+      pasta: 'Financeiro',
+      participantes: ['Marcos', 'Beatriz'],
+      duracaoMin: 25,
+      criadoEm: now - 10 * DAY,
+      transcricao: `Marcos: Fechamos fevereiro com o time de marketing 15% acima do orçado, principalmente em anúncios pagos.
+Beatriz: Já identifiquei a causa, foi uma campanha extra que não estava no planejamento original.
+Marcos: Precisamos aprovar isso formalmente ou cortar em outra área pra compensar.
+Beatriz: Sugiro conversar com o marketing antes de cortar em outro lugar, pode ser algo pontual.
+Marcos: Combinado, eu marco essa conversa até sexta. E o caixa pro próximo mês está tranquilo?
+Beatriz: Está, sem sinal de aperto por enquanto.`,
+      analise: {
+        resumo_executivo: 'Fevereiro fechou com o orçamento de marketing 15% acima do planejado, por conta de uma campanha extra não prevista. A equipe decidiu conversar com o time de marketing antes de cortar gastos em outra área, e o caixa do próximo mês segue tranquilo.',
+        topicos: ['Orçamento de marketing', 'Fechamento mensal', 'Fluxo de caixa'],
+        decisoes: ['Conversar com o marketing antes de cortar orçamento de outra área'],
+        tarefas: [
+          { tarefa: 'Marcar conversa com o time de marketing sobre o estouro de orçamento', responsavel: 'Marcos', prazo: 'sexta-feira', critica: false, concluida: false }
+        ],
+        palavras_chave: ['orçamento', 'marketing', 'fechamento', 'caixa'],
+        clientes_citados: [],
+        produtos_ou_projetos_citados: [],
+        sentimento: { geral: 'neutro', resumo: 'Preocupação moderada, mas sem alarme.' },
+        riscos: [
+          { descricao: 'Orçamento de marketing 15% acima do planejado em fevereiro', prioridade: 'medio', status: 'aberto' }
+        ],
+        score: { produtividade: 74, objetividade: 76, clareza: 78, engajamento: 70, tomada_decisao: 72, execucao: 68, comunicacao: 75 },
+        tempo: { produtivo_pct: 76, conversa_paralela_pct: 5, repeticao_pct: 4, sem_conclusao_pct: 10 },
+        coach: [
+          'Definir um limite de aprovação prévia para campanhas extras não planejadas'
+        ],
+        participantes: [
+          { nome: 'Marcos', participacao_pct: 55, turnos: 3, tarefas_criadas: 0 },
+          { nome: 'Beatriz', participacao_pct: 45, turnos: 3, tarefas_criadas: 1 }
+        ]
+      }
+    },
+    {
+      titulo: '[Exemplo] Fluxo de caixa — Abril',
+      pasta: 'Financeiro',
+      participantes: ['Marcos', 'Beatriz'],
+      duracaoMin: 18,
+      criadoEm: now - 3 * DAY,
+      transcricao: `Beatriz: Marcos, o cliente Alfa Log atrasou o pagamento de novo, já são 20 dias.
+Marcos: Já é a segunda vez em três meses. Vamos cobrar formalmente e considerar renegociar as condições dele.
+Beatriz: Concordo, eu mando o aviso de cobrança ainda hoje.
+Marcos: E o resto do caixa de abril está dentro do esperado?
+Beatriz: Está, só esse atraso que está pesando no fluxo dessa semana.`,
+      analise: {
+        resumo_executivo: 'O cliente Alfa Log atrasou o pagamento pela segunda vez em três meses, impactando o fluxo de caixa da semana. A equipe decidiu enviar cobrança formal e avaliar renegociar as condições de pagamento desse cliente.',
+        topicos: ['Fluxo de caixa', 'Inadimplência de cliente', 'Cobrança'],
+        decisoes: ['Enviar cobrança formal ao cliente Alfa Log', 'Avaliar renegociação das condições de pagamento'],
+        tarefas: [
+          { tarefa: 'Enviar aviso de cobrança para o cliente Alfa Log', responsavel: 'Beatriz', prazo: 'hoje', critica: true, concluida: true }
+        ],
+        palavras_chave: ['fluxo de caixa', 'inadimplência', 'cobrança', 'Alfa Log'],
+        clientes_citados: ['Alfa Log'],
+        produtos_ou_projetos_citados: [],
+        sentimento: { geral: 'negativo', resumo: 'Preocupação com atraso recorrente de um cliente.' },
+        riscos: [
+          { descricao: 'Cliente Alfa Log com atraso de pagamento recorrente (2ª vez em 3 meses)', prioridade: 'alto', status: 'aberto' }
+        ],
+        score: { produtividade: 80, objetividade: 82, clareza: 79, engajamento: 74, tomada_decisao: 78, execucao: 75, comunicacao: 77 },
+        tempo: { produtivo_pct: 82, conversa_paralela_pct: 4, repeticao_pct: 3, sem_conclusao_pct: 6 },
+        coach: [
+          'Considerar uma política de cobrança automática após 15 dias de atraso, pra não depender de identificar caso a caso'
+        ],
+        participantes: [
+          { nome: 'Beatriz', participacao_pct: 52, turnos: 3, tarefas_criadas: 1 },
+          { nome: 'Marcos', participacao_pct: 48, turnos: 2, tarefas_criadas: 0 }
         ]
       }
     }
