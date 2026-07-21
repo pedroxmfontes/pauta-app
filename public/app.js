@@ -1753,7 +1753,7 @@ function usersTemplate(){
       <div class="form-row">
         <div>
           <label for="newUserUsername">Usuário (login)</label>
-          <input type="text" id="newUserUsername" placeholder="Ex: ana.souza" required>
+          <input type="text" id="newUserUsername" placeholder="Ex: thiago.nascimento" required>
         </div>
         <div>
           <label for="newUserPassword">Senha</label>
