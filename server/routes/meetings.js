@@ -8,6 +8,7 @@ const { getKnownThemes, buildTranscriptBlock, buildCoreInstructions, buildIntelI
 const { buildDemoMeetings } = require('../services/demoData');
 const { visibleMeetings, canModifyMeeting } = require('../services/permissions');
 const { requireOwner } = require('../middleware/auth');
+const { hashPassword, verifyPassword } = require('../services/auth');
 
 const ALLOWED_AUDIO_EXT = /\.(mp3|wav|m4a|ogg|oga|webm|mp4|aac|flac|opus)$/i;
 const upload = multer({
@@ -57,6 +58,21 @@ function normalizePasta(pasta) {
 }
 function normalizeVisibilidade(visibilidade) {
   return VISIBILIDADES.includes(visibilidade) ? visibilidade : 'dono';
+}
+
+/** Nunca deixa o hash da senha sair pro cliente. Reunião com senha só manda o conteúdo depois de desbloqueada. */
+function sanitizeMeeting(m) {
+  if (!m) return m;
+  const { senhaHash, ...rest } = m;
+  rest.protegida = !!senhaHash;
+  if (senhaHash) {
+    delete rest.analise;
+    delete rest.transcricao;
+  }
+  return rest;
+}
+function sanitizeMeetings(list) {
+  return list.map(sanitizeMeeting);
 }
 
 async function runAnalysis({ titulo, participantesList, duracaoMin, transcricao, criadoPor, pasta, visibilidade }) {
@@ -118,7 +134,7 @@ async function runAnalysis({ titulo, participantesList, duracaoMin, transcricao,
 
 router.get('/', async (req, res, next) => {
   try {
-    res.json(visibleMeetings(await store.listMeetings(), req.user));
+    res.json(sanitizeMeetings(visibleMeetings(await store.listMeetings(), req.user)));
   } catch (e) { next(e); }
 });
 
@@ -127,7 +143,7 @@ router.get('/', async (req, res, next) => {
 router.post('/demo', requireOwner, async (req, res, next) => {
   try {
     await store.seedDemoMeetings(buildDemoMeetings());
-    res.json(visibleMeetings(await store.listMeetings(), req.user));
+    res.json(sanitizeMeetings(visibleMeetings(await store.listMeetings(), req.user)));
   } catch (e) { next(e); }
 });
 router.delete('/demo', requireOwner, async (req, res, next) => {
@@ -154,7 +170,7 @@ router.post('/manual', async (req, res, next) => {
       pasta,
       visibilidade
     });
-    res.json(meeting);
+    res.json(sanitizeMeeting(meeting));
   } catch (e) { next(e); }
 });
 
@@ -200,7 +216,7 @@ router.post('/audio', upload.single('audio'), async (req, res, next) => {
           visibilidade
         });
 
-        jobs.updateJob(jobId, { status: 'concluido', meeting });
+        jobs.updateJob(jobId, { status: 'concluido', meeting: sanitizeMeeting(meeting) });
       } catch (err) {
         console.error('Falha no processamento do job', jobId, err);
         jobs.updateJob(jobId, { status: 'erro', error: err.message });
@@ -225,7 +241,7 @@ router.patch('/:id/tasks/:idx', async (req, res, next) => {
       m.analise.tarefas[idx].concluida = concluida;
       return m;
     });
-    res.json(meeting);
+    res.json(sanitizeMeeting(meeting));
   } catch (e) { next(e); }
 });
 
@@ -259,7 +275,7 @@ router.patch('/:id/analise', async (req, res, next) => {
       }
       return m;
     });
-    res.json(meeting);
+    res.json(sanitizeMeeting(meeting));
   } catch (e) { next(e); }
 });
 
@@ -272,7 +288,41 @@ router.patch('/:id/pasta', async (req, res, next) => {
       m.pasta = pasta;
       return m;
     });
-    res.json(meeting);
+    res.json(sanitizeMeeting(meeting));
+  } catch (e) { next(e); }
+});
+
+// Define, troca ou remove a senha de uma reunião específica (usado no menu de atalho da lista).
+router.patch('/:id/senha', async (req, res, next) => {
+  try {
+    const senha = ((req.body || {}).senha || '').toString();
+    if (senha && senha.length < 4) {
+      return res.status(400).json({ error: 'A senha precisa ter pelo menos 4 caracteres.' });
+    }
+    const senhaHash = senha ? await hashPassword(senha) : null;
+    const meeting = await store.updateMeeting(req.params.id, m => {
+      if (!canModifyMeeting(m, req.user)) throw Object.assign(new Error('Você não tem permissão para proteger essa reunião.'), { status: 403 });
+      if (senhaHash) m.senhaHash = senhaHash; else delete m.senhaHash;
+      return m;
+    });
+    res.json(sanitizeMeeting(meeting));
+  } catch (e) { next(e); }
+});
+
+// Confirma a senha de uma reunião protegida e devolve o conteúdo completo.
+router.post('/:id/unlock', async (req, res, next) => {
+  try {
+    const senha = ((req.body || {}).senha || '').toString();
+    const meeting = await store.getMeetingById(req.params.id);
+    if (!meeting) return res.status(404).json({ error: 'Reunião não encontrada.' });
+    if (!visibleMeetings([meeting], req.user).length) {
+      return res.status(403).json({ error: 'Você não tem permissão para ver essa reunião.' });
+    }
+    if (!meeting.senhaHash) return res.json(sanitizeMeeting(meeting));
+    const ok = await verifyPassword(senha, meeting.senhaHash);
+    if (!ok) return res.status(401).json({ error: 'Senha incorreta.' });
+    const { senhaHash, ...rest } = meeting;
+    res.json({ ...rest, protegida: true });
   } catch (e) { next(e); }
 });
 

@@ -12,7 +12,7 @@ router.post('/', async (req, res, next) => {
     if (!query || !String(query).trim()) {
       return res.status(400).json({ error: 'Digite uma pergunta.' });
     }
-    const meetings = visibleMeetings(await store.listMeetings(), req.user);
+    const meetings = visibleMeetings(await store.listMeetings(), req.user).filter(m => !m.senhaHash);
     if (meetings.length === 0) {
       return res.status(400).json({ error: 'Nenhuma reunião analisada ainda.' });
     }

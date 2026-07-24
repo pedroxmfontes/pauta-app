@@ -15,7 +15,7 @@ function overallScore(a) {
 
 router.post('/', async (req, res, next) => {
   try {
-    const meetings = visibleMeetings(await store.listMeetings(), req.user);
+    const meetings = visibleMeetings(await store.listMeetings(), req.user).filter(m => !m.senhaHash);
     if (meetings.length < 2) {
       return res.json({ tooFew: true });
     }

@@ -50,7 +50,8 @@ const ICON_PATHS = {
   sentiment: '<circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/>',
   x: '<path d="M18 6L6 18M6 6l12 12"/>',
   undo: '<path d="M3 7v6h6"/><path d="M3 13a9 9 0 106.7-8.7"/>',
-  more: '<circle cx="12" cy="5" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.6" fill="currentColor" stroke="none"/>'
+  more: '<circle cx="12" cy="5" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.6" fill="currentColor" stroke="none"/>',
+  lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/>'
 };
 function icon(name, size=15){
   const p = ICON_PATHS[name] || ICON_PATHS.target;
@@ -697,16 +698,12 @@ function renderSidebar(){
     return `<div class="meeting-card ${currentView==='detail' && m.id===currentId?'active':''}" data-id="${m.id}">
       <span class="mc-num mono">${String(m.numero).padStart(3,'0')}</span>
       <div class="mc-meta">
-        <div class="mc-title">${escapeHtml(m.titulo)}</div>
+        <div class="mc-title">${m.protegida?icon('lock',11)+' ':''}${escapeHtml(m.titulo)}</div>
         <div class="mc-date">${new Date(m.criadoEm).toLocaleDateString('pt-BR',{day:'2-digit', month:'short'})} · ${escapeHtml(meetingFolder(m))}</div>
       </div>
       <span class="mc-score" style="background:${scoreColor(os)};" title="${os!=null? 'Score '+os : 'Sem score'}"></span>
       <div class="mc-menu-wrap">
-        <button type="button" class="mc-menu-btn" data-menu-id="${m.id}" title="Mais opções">${icon('more',14)}</button>
-        <div class="mc-menu" data-menu-for="${m.id}">
-          <div class="mc-menu-item" data-action="edit" data-id="${m.id}">${icon('doc',14)} Editar</div>
-          <div class="mc-menu-item" data-action="move" data-id="${m.id}">${icon('inbox',14)} Mover de pasta</div>
-        </div>
+        <button type="button" class="mc-menu-btn" data-id="${m.id}" title="Mais opções">${icon('more',14)}</button>
       </div>
     </div>`;
   }).join('');
@@ -716,31 +713,57 @@ function renderSidebar(){
   list.querySelectorAll('.mc-menu-btn').forEach(btn=>{
     btn.addEventListener('click', e=>{
       e.stopPropagation();
-      const menu = list.querySelector(`.mc-menu[data-menu-for="${btn.dataset.menuId}"]`);
-      const wasOpen = menu.classList.contains('open');
-      closeAllMeetingMenus();
-      if(!wasOpen) menu.classList.add('open');
+      openMeetingMenu(btn, btn.dataset.id);
     });
   });
-  list.querySelectorAll('.mc-menu-item').forEach(item=>{
-    item.addEventListener('click', e=>{
-      e.stopPropagation();
+}
+
+/** Menu de atalho (⋮) — criado direto no <body> e posicionado por coordenadas, pra não
+ *  ficar cortado pelo "overflow" da lista lateral (que tem scroll). */
+function closeAllMeetingMenus(){
+  document.querySelectorAll('.mc-menu.open').forEach(el=>el.remove());
+}
+document.addEventListener('click', closeAllMeetingMenus);
+document.addEventListener('scroll', closeAllMeetingMenus, true);
+
+function openMeetingMenu(btn, meetingId){
+  const wasOpen = !!document.querySelector('.mc-menu.open');
+  closeAllMeetingMenus();
+  if(wasOpen) return; // clicou de novo no mesmo botão só fecha
+
+  const m = allMeetings.find(x=>x.id===meetingId);
+  if(!m) return;
+  const rect = btn.getBoundingClientRect();
+  const menu = document.createElement('div');
+  menu.className = 'mc-menu open';
+  menu.style.top = (rect.bottom + 4) + 'px';
+  menu.style.left = Math.max(8, rect.right - 170) + 'px';
+  menu.innerHTML = `
+    <div class="mc-menu-item" data-action="edit">${icon('doc',14)} Editar</div>
+    <div class="mc-menu-item" data-action="move">${icon('inbox',14)} Mover de pasta</div>
+    <div class="mc-menu-item" data-action="password">${icon('lock',14)} ${m.protegida ? 'Trocar/remover senha' : 'Colocar senha'}</div>
+    <div class="mc-menu-item" data-action="delete" style="color:var(--red);">${icon('x',14)} Excluir</div>
+  `;
+  document.body.appendChild(menu);
+  menu.addEventListener('click', e=>e.stopPropagation());
+  menu.querySelectorAll('.mc-menu-item').forEach(item=>{
+    item.addEventListener('click', async ()=>{
       closeAllMeetingMenus();
-      const id = item.dataset.id;
-      if(item.dataset.action==='edit'){
-        setView('detail', id);
+      const action = item.dataset.action;
+      if(action==='edit'){
+        setView('detail', meetingId);
         detailEditMode = true;
         renderMain();
-      } else if(item.dataset.action==='move'){
-        openMoveFolderModal(id);
+      } else if(action==='move'){
+        openMoveFolderModal(meetingId);
+      } else if(action==='password'){
+        openSetPasswordModal(meetingId);
+      } else if(action==='delete'){
+        await deleteMeetingById(meetingId);
       }
     });
   });
 }
-function closeAllMeetingMenus(){
-  document.querySelectorAll('.mc-menu.open').forEach(el=>el.classList.remove('open'));
-}
-document.addEventListener('click', closeAllMeetingMenus);
 
 function openMoveFolderModal(meetingId){
   const m = allMeetings.find(x=>x.id===meetingId);
@@ -783,6 +806,65 @@ function openMoveFolderModal(meetingId){
   });
 }
 
+async function deleteMeetingById(id){
+  const m = allMeetings.find(x=>x.id===id);
+  const ok = await showConfirm('Essa ação não pode ser desfeita. A reunião e toda a sua análise serão removidas.', 'Excluir reunião', `Excluir "${m ? m.titulo : 'esta reunião'}"?`);
+  if(!ok) return;
+  try{
+    const res = await fetch(`/api/meetings/${id}`, { method:'DELETE' });
+    const data = await readJsonSafe(res);
+    if(!res.ok) throw new Error(data.error || 'Falha ao excluir a reunião.');
+    allMeetings = allMeetings.filter(x=>x.id!==id);
+    applyFolderFilter();
+    showToast('Reunião excluída.', 'success');
+    if(currentId===id) setView('dashboard'); else { renderSidebar(); renderMain(); }
+  }catch(e){
+    showToast('Não foi possível excluir: ' + e.message, 'error');
+  }
+}
+
+function openSetPasswordModal(meetingId){
+  const m = allMeetings.find(x=>x.id===meetingId);
+  if(!m) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal-card">
+    <div class="modal-title">${m.protegida ? 'Trocar ou remover senha' : 'Colocar senha'}</div>
+    <p class="modal-text">${m.protegida
+      ? `Digite uma nova senha pra "${escapeHtml(m.titulo)}", ou deixe em branco pra remover a proteção.`
+      : `Quem não souber a senha não vai conseguir abrir "${escapeHtml(m.titulo)}" (continua aparecendo na lista, só o conteúdo fica bloqueado).`}</p>
+    <input type="password" id="setPasswordInput" placeholder="Nova senha (mínimo 4 caracteres)" style="margin-bottom:6px;" autocomplete="new-password">
+    <div class="modal-actions">
+      <button class="btn" id="setPasswordCancel">Cancelar</button>
+      <button class="btn primary" id="setPasswordConfirm">${m.protegida ? 'Salvar' : 'Proteger'}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  requestAnimationFrame(()=>overlay.classList.add('show'));
+  function close(){ overlay.classList.remove('show'); setTimeout(()=>overlay.remove(),200); }
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) close(); });
+  overlay.querySelector('#setPasswordCancel').addEventListener('click', close);
+  overlay.querySelector('#setPasswordConfirm').addEventListener('click', async ()=>{
+    const senha = document.getElementById('setPasswordInput').value;
+    try{
+      const res = await fetch(`/api/meetings/${meetingId}/senha`, {
+        method:'PATCH', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ senha })
+      });
+      const data = await readJsonSafe(res);
+      if(!res.ok) throw new Error(data.error || 'Falha ao salvar a senha.');
+      const idx = allMeetings.findIndex(x=>x.id===meetingId);
+      if(idx!==-1) allMeetings[idx] = { ...allMeetings[idx], ...data };
+      applyFolderFilter();
+      renderSidebar(); renderMain();
+      showToast(senha ? 'Reunião protegida com senha.' : 'Senha removida.', 'success');
+      close();
+    }catch(e){
+      showToast('Não foi possível salvar: ' + e.message, 'error');
+    }
+  });
+}
+
 /* ============================================================
    MAIN DISPATCH
 ============================================================ */
@@ -794,7 +876,7 @@ function renderMain(){
   else if(currentView==='detail'){
     const m = meetings.find(x=>x.id===currentId);
     if(!m){ setView('dashboard'); return; }
-    html = detailTemplate(m);
+    html = (m.protegida && !m.analise) ? passwordPromptTemplate(m) : detailTemplate(m);
   }
   else if(currentView==='insights') html = insightsTemplate();
   else if(currentView==='timeline') html = timelineTemplate();
@@ -807,7 +889,10 @@ function renderMain(){
 
   if(currentView==='dashboard') bindDashboard();
   else if(currentView==='new') bindNewMeetingForm();
-  else if(currentView==='detail') bindDetailActions(meetings.find(x=>x.id===currentId));
+  else if(currentView==='detail'){
+    const m = meetings.find(x=>x.id===currentId);
+    if(m && m.protegida && !m.analise) bindPasswordPrompt(m); else bindDetailActions(m);
+  }
   else if(currentView==='insights') runInsights();
   else if(currentView==='timeline') bindTimeline();
   else if(currentView==='search') bindSearch();
@@ -1202,6 +1287,53 @@ async function pollAudioJob(jobId){
 }
 
 /* ============================================================
+   SENHA DA REUNIÃO — tela mostrada no lugar do detalhe até
+   a senha certa ser digitada.
+============================================================ */
+function passwordPromptTemplate(m){
+  return `
+  <div class="eyebrow">Reunião protegida</div>
+  <div class="page-title">${icon('lock',20)} ${escapeHtml(m.titulo)}</div>
+  <div class="page-sub">Essa reunião tem senha. Digite a senha pra ver o conteúdo.</div>
+  <div class="form-card" style="max-width:380px;">
+    <div id="unlockError"></div>
+    <label for="unlockPassword">Senha</label>
+    <input type="password" id="unlockPassword" placeholder="Digite a senha" autocomplete="current-password">
+    <div class="form-actions">
+      <button class="btn primary" id="unlockBtn">Desbloquear</button>
+    </div>
+  </div>`;
+}
+function bindPasswordPrompt(m){
+  const input = document.getElementById('unlockPassword');
+  const errorEl = document.getElementById('unlockError');
+  const btn = document.getElementById('unlockBtn');
+  async function tryUnlock(){
+    errorEl.innerHTML = '';
+    btn.disabled = true;
+    try{
+      const res = await fetch(`/api/meetings/${m.id}/unlock`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ senha: input.value })
+      });
+      const data = await readJsonSafe(res);
+      if(!res.ok) throw new Error(data.error || 'Não foi possível desbloquear.');
+      const idx = allMeetings.findIndex(x=>x.id===m.id);
+      if(idx!==-1) allMeetings[idx] = data;
+      applyFolderFilter();
+      renderMain();
+    }catch(e){
+      errorEl.innerHTML = `<div class="error-box">${icon('alert',15)} ${escapeHtml(e.message)}</div>`;
+    }finally{
+      btn.disabled = false;
+    }
+  }
+  btn.addEventListener('click', tryUnlock);
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') tryUnlock(); });
+  input.focus();
+}
+
+/* ============================================================
    DETAIL
 ============================================================ */
 function detailTemplate(m){
@@ -1371,21 +1503,7 @@ function bindDetailActions(m){
   document.getElementById('btnExportMd').addEventListener('click', ()=>{ exportMd(m); showToast('Relatório .md exportado.', 'success'); });
   document.getElementById('btnExportCsv').addEventListener('click', ()=>{ exportCsv(m); showToast('Tarefas exportadas em CSV.', 'success'); });
   document.getElementById('btnExportPdf').addEventListener('click', ()=>window.print());
-  document.getElementById('btnExcluir').addEventListener('click', async ()=>{
-    const ok = await showConfirm('Essa ação não pode ser desfeita. A reunião e toda a sua análise serão removidas.', 'Excluir reunião', 'Excluir esta reunião?');
-    if(!ok) return;
-    try{
-      const res = await fetch(`/api/meetings/${m.id}`, { method:'DELETE' });
-      const data = await readJsonSafe(res);
-      if(!res.ok) throw new Error(data.error || 'Falha ao excluir a reunião.');
-      allMeetings = allMeetings.filter(x=>x.id!==m.id);
-      applyFolderFilter();
-      showToast('Reunião excluída.', 'success');
-      setView('dashboard');
-    }catch(e){
-      showToast('Não foi possível excluir: ' + e.message, 'error');
-    }
-  });
+  document.getElementById('btnExcluir').addEventListener('click', ()=>deleteMeetingById(m.id));
   document.querySelectorAll('.task-check').forEach(cb=>{
     cb.addEventListener('change', async (e)=>{
       const idx = parseInt(e.target.dataset.idx,10);
