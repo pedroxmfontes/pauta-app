@@ -2009,6 +2009,45 @@ function bindAuthForm(){
   });
 }
 
+/* ============================================================
+   ATUALIZAÇÃO EM SEGUNDO PLANO — consulta o servidor de tempos em
+   tempos pra pegar mudanças feitas por outra pessoa, sem precisar
+   de F5. Evitado de propósito: WebSocket/conexão permanente, que
+   quebraria toda vez que o Render (plano grátis) "dorme".
+============================================================ */
+const POLL_INTERVAL_MS = 20000;
+let pollTimer = null;
+async function pollForUpdates(){
+  if(document.hidden) return;
+  try{
+    const [meetingsRes, dismissedRes] = await Promise.all([
+      fetch('/api/meetings'),
+      fetch('/api/dismissed-alerts')
+    ]);
+    if(!meetingsRes.ok || !dismissedRes.ok) return;
+    const newMeetings = await meetingsRes.json();
+    const newDismissed = await dismissedRes.json();
+    const meetingsChanged = JSON.stringify(newMeetings) !== JSON.stringify(allMeetings);
+    const dismissedChanged = JSON.stringify(newDismissed) !== JSON.stringify([...dismissedAlerts]);
+    if(!meetingsChanged && !dismissedChanged) return;
+
+    allMeetings = newMeetings;
+    dismissedAlerts = new Set(newDismissed);
+    applyFolderFilter();
+    renderSidebar();
+    // Só atualiza a área principal em telas de leitura, sem formulário em andamento e
+    // sem risco de gastar crédito de IA de novo (Insights/Busca chamam a IA ao renderizar).
+    if(['dashboard','timeline','risks','alerts'].includes(currentView)) renderMain();
+  }catch(e){
+    // silencioso — não incomodar o usuário por causa de uma atualização em segundo plano
+  }
+}
+function startPolling(){
+  if(pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(pollForUpdates, POLL_INTERVAL_MS);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) pollForUpdates(); });
+}
+
 async function boot(){
   bindAuthForm();
   document.getElementById('btnLogout').addEventListener('click', async ()=>{
@@ -2025,6 +2064,7 @@ async function boot(){
   renderMain();
   loadMeetings();
   initLanding();
+  startPolling();
 }
 
 /* ============================================================
